@@ -9,9 +9,13 @@ import numpy as np
 import sys
 import datetime
 
+do_profile=True
 os.environ['TF_GPU_THREAD_MODE']="gpu_private"
-os.environ['TF_GPU_THREAD_COUNT']="2"
-os.environ['TF_CPP_VMODULE']="auto_mixed_precision=3,xla_compilation_cache=1"
+os.environ['TF_GPU_THREAD_COUNT']="1"
+#os.environ['TF_CPP_VMODULE']="auto_mixed_precision=3,xla_compilation_cache=1"
+#os.environ['TF_NUM_INTEROP_THREADS']="10"
+#os.environ['TF_NUM_INTRAOP_THREADS']="5"
+
 from tqdm.notebook import tqdm
 
 import tensorflow as tf
@@ -31,7 +35,7 @@ print(f"TF version is {tf.__version__} located at {tf.__file__}")
 
 
 os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=fusible  --tf_xla_min_cluster_size=2"
-#os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=fusible"
+os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=1"
 tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
 
 
@@ -46,7 +50,7 @@ model_params['use_batched_nms'] = True
 model_params['train_batch_size'] = data_params['batch_size']
 model_params['l2_weight_decay'] = 1e-4
 model_params['include_mask'] = True
-train_data = '/Datasets_local/coco/coco-2017/coco2017-TFRecords/train*'
+train_data = '/data/coco/coco-2017/tfrecord/train*'
 
 
 # In[ ]:
@@ -162,9 +166,10 @@ for i in progressbar:
 # In[ ]:
 
 
+
 progressbar = tqdm(range(64))
 loss_history = []
-profile_base="/DLExamples/TensorFlow2/Segmentation/MaskRCNN/Profiles"
+profile_base="/work/sami/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/Profiles"
 suffix=""
 xlaflags=os.environ.get("TF_XLA_FLAGS","")
 if "fusible" in xlaflags:
@@ -182,14 +187,22 @@ if os.environ.get("TF_GPU_THREAD_MODE") == 'gpu_private':
     suffix+="_privThr_"+os.environ.get("TF_GPU_THREAD_COUNT","2")
 
 def do_step_profile(profile_path,stepstr):
-#    tf.profiler.experimental.start(profile_path)
-    print(f"Saving profile to {profile_path}")
-    for i in progressbar:
- #       with tf.profiler.experimental.Trace(f"{stepstr}_train",step_num=i,_r=1):
-        feature, label = next(train_gen)
-        loss = train_step(feature, label, model_params)
-        loss_history.append(loss.numpy())
-        progressbar.set_description("Loss: {0:.4f}".format(np.array(loss_history[-50:]).mean()))
+    if do_profile:
+        tf.profiler.experimental.start(profile_path)
+        print(f"Saving profile to {profile_path}")
+        for i in progressbar:
+            with tf.profiler.experimental.Trace(f"{stepstr}_train",step_num=i,_r=1):
+                feature, label = next(train_gen)
+                loss = train_step(feature, label, model_params)
+                loss_history.append(loss.numpy())
+            progressbar.set_description("Loss: {0:.4f}".format(np.array(loss_history[-50:]).mean()))
+    else:
+        for i in progressbar:
+    #       with tf.profiler.experimental.Trace(f"{stepstr}_train",step_num=i,_r=1):
+            feature, label = next(train_gen)
+            loss = train_step(feature, label, model_params)
+            loss_history.append(loss.numpy())
+            progressbar.set_description("Loss: {0:.4f}".format(np.array(loss_history[-50:]).mean()))
 
 if "TFLocal" in tf.__file__:
     profile_path=os.path.join(profile_base,f"LocalBuild_2.3plus{suffix}")
@@ -201,14 +214,16 @@ elif "TFUpstream" in tf.__file__:
     do_step_profile(profile_path,stepstr)
 else:
     profile_path=os.path.join(profile_base,f"nvidia_20.08{suffix}")
-#    tf.profiler.experimental.start(profile_path)
+    if do_profile:
+        tf.profiler.experimental.start(profile_path)
     stepstr="nvidia"
     for i in progressbar:
         feature, label = next(train_gen)
         loss = train_step(feature, label, model_params)
         loss_history.append(loss.numpy())
         progressbar.set_description("Loss: {0:.4f}".format(np.array(loss_history[-50:]).mean()))
-#tf.profiler.experimental.stop()
+if do_profile:
+    tf.profiler.experimental.stop()
 
 
 # In[ ]:
