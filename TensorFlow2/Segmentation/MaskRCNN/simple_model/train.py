@@ -39,8 +39,8 @@ from mask_rcnn.ops import training_ops
 import model
 import load_weights
 
-train_file_pattern = '/home/ubuntu/data/coco/tf_record/train*'
-batch_size = 4
+train_file_pattern = '/home/ubuntu/data/train*'
+batch_size = 6
 
 data_params = dataset_params.get_data_params()
 params = mask_rcnn_params.default_config().values()

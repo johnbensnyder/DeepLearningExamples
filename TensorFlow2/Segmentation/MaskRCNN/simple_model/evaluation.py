@@ -135,10 +135,73 @@ def compute_coco_eval_metric_n(predictions,
     return eval_results
 
 
+def compute_coco_eval_metric_nonestimator(predictions,
+                             include_mask=True,
+                             annotation_json_file="",
+                             report_frequency=None):
+    """Compute COCO eval metric given a prediction generator.
+
+    Args:
+    predictor: a generator that iteratively pops a dictionary of predictions
+      with the format compatible with COCO eval tool.
+    num_batches: the number of batches to be aggregated in eval. This is how
+      many times that the predictor gets pulled.
+    include_mask: a boolean that indicates whether we include the mask eval.
+    annotation_json_file: the annotation json file of the eval dataset.
+
+    Returns:
+    eval_results: the aggregated COCO metric eval results.
+    """
+    #print(output_dict)
+    #return
+
+    if annotation_json_file == "":
+        annotation_json_file = None
+
+    use_groundtruth_from_json = (annotation_json_file is not None)
+
+    #predictions = dict()
+    batch_idx = 0
+
+    if use_groundtruth_from_json:
+        eval_metric = coco_metric.EvaluationMetric(annotation_json_file, include_mask=include_mask)
+    else:
+        eval_metric = coco_metric.EvaluationMetric(filename=None, include_mask=include_mask)
+
+    def evaluation_preds(preds):
+
+        # Essential to avoid modifying the source dict
+        _preds = copy.deepcopy(preds)
+
+        for k, v in six.iteritems(_preds):
+            _preds[k] = np.concatenate(_preds[k], axis=0)
+
+        if 'orig_images' in _preds and _preds['orig_images'].shape[0] > 10:
+            # Only samples a few images for visualization.
+            _preds['orig_images'] = _preds['orig_images'][:10]
+
+        if use_groundtruth_from_json:
+            eval_results = eval_metric.predict_metric_fn(_preds)
+
+        else:
+            images, annotations = coco_utils.extract_coco_groundtruth(_preds, include_mask)
+            coco_dataset = coco_utils.create_coco_format_dataset(images, annotations)
+            eval_results = eval_metric.predict_metric_fn(_preds, groundtruth_data=coco_dataset)
+
+        return eval_results
+
+    # Take into account cuDNN & Tensorflow warmup
+    # Drop N first steps for avg throughput calculation
+    BURNIN_STEPS = 100
+    model_throughput_list = list()
+    inference_time_list = list()
+
+    eval_results = evaluation_preds(preds=predictions)
+    logging.info('Eval results: %s' % pprint.pformat(eval_results, indent=4))
 
 
 
-def compute_coco_eval_metric_1(predictor,
+def compute_coco_eval_metric_1(output_dict,
                              num_batches=-1,
                              include_mask=True,
                              annotation_json_file="",
@@ -157,6 +220,8 @@ def compute_coco_eval_metric_1(predictor,
     Returns:
     eval_results: the aggregated COCO metric eval results.
     """
+    #print(output_dict)
+    #return
 
     if annotation_json_file == "":
         annotation_json_file = None
@@ -203,12 +268,14 @@ def compute_coco_eval_metric_1(predictor,
 
         try:
             step_t0 = time.time()
-            step_predictions = six.next(predictor)
+            #step_predictions = six.next(predictor)
+            step_predictions = output_dict
             batch_time = time.time() - step_t0
             #print(step_predictions.dtype)
-            print(step_predictions.keys())
-            print(step_predictions['detection_boxes'].shape)
-            throughput = eval_batch_size / batch_time
+            #print(output_dict.keys())
+            #print(step_predictions['detection_boxes'].shape)
+            #throughput = eval_batch_size / batch_time
+            throughput = 0
             model_throughput_list.append(throughput)
             inference_time_list.append(batch_time)
 
@@ -331,9 +398,9 @@ def evaluate(eval_estimator,
     # Every predictor.next() gets a batch of prediction (a dictionary).
     num_eval_times = num_eval_samples // eval_batch_size
     assert num_eval_times > 0, 'num_eval_samples must be >= eval_batch_size!'
-    do_distributed = False
+
     if do_distributed:
-        print("DISTRIBUTED DISTRIBUTED DISTRIBUTED")
+
         worker_predictions = get_predictions(predictor,
             num_batches=num_eval_times,
             eval_batch_size=eval_batch_size)
@@ -375,7 +442,7 @@ def evaluate(eval_estimator,
         return None
     else:
 
-        print("NOT DISTRIBUTED DISTRIBUTED DISTRIBUTED")
+
         eval_results, predictions = compute_coco_eval_metric_1(
             predictor,
             num_eval_times,

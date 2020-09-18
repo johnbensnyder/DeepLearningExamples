@@ -90,9 +90,13 @@ class MaskCOCO(COCO):
         detection_results,
         include_mask=include_mask,
         is_image_mask=is_image_mask)
+    
+
     assert isinstance(predictions, list), 'results in not an array of objects'
+
     if predictions:
       image_ids = [pred['image_id'] for pred in predictions]
+     
       assert set(image_ids) == (set(image_ids) & set(self.getImgIds())), \
              'Results do not correspond to current coco set'
 
