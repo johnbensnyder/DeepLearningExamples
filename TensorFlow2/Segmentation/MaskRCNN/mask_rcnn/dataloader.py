@@ -168,14 +168,15 @@ class InputReader(object):
             buffer_size=tf.data.experimental.AUTOTUNE,
         )
 
-        if self._mode == tf.estimator.ModeKeys.PREDICT or n_gpus > 1:
-            if not tf.distribute.has_strategy():
-                dataset = dataset.apply(
-                    tf.data.experimental.prefetch_to_device(
-                        '/gpu:0',  # With Horovod the local GPU is always 0
-                        buffer_size=1,
-                    )
-                )
+        #if self._mode == tf.estimator.ModeKeys.PREDICT or n_gpus > 1:
+        #    if not tf.distribute.has_strategy():
+        #        print("TRYING TO PREFETCH")
+        #        dataset = dataset.apply(
+        #            tf.data.experimental.prefetch_to_device(
+        #                '/gpu:0',  # With Horovod the local GPU is always 0
+        #                buffer_size=1,
+        #            )
+        #        )
 
         data_options = tf.data.Options()
 
@@ -464,3 +465,4 @@ if __name__ == "__main__":
             print("\t=> Median Time per step: %3d msecs" % np.median(processing_time_arr))
             print("\t=> Median Processing Speed: %d images/secs" % np.median(img_per_sec_arr))
             print("\t=> Median Processing Time: %.2f msecs/image" % (1 / float(np.median(img_per_sec_arr)) * 1000))
+

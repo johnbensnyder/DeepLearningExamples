@@ -4,4 +4,4 @@
 
 mpirun --allow-run-as-root \
     -np `nvidia-smi --query-gpu=name --format=csv,noheader | wc -l` \
-    python train.py
+    python train_dl2.py

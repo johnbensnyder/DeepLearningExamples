@@ -268,7 +268,7 @@ def model(features,  params, labels=None, is_training=True):
             pass
         model_outputs.pop('fpn_features', None)
         predictions.update(model_outputs)
-        return predictions
+        return model_outputs
     total_rpn_loss, rpn_score_loss, rpn_box_loss = losses.rpn_loss(
         score_outputs=model_outputs['rpn_score_outputs'],
         box_outputs=model_outputs['rpn_box_outputs'],
