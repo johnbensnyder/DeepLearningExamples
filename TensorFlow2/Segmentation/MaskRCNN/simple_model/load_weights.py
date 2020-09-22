@@ -1,5 +1,5 @@
 import tensorflow.compat.v1 as tf
-#import horovod.tensorflow as hvd
+import horovod.tensorflow as hvd
 import sys
 import re
 
@@ -117,8 +117,7 @@ def assign_from_checkpoint(model_path, var_list, ignore_missing_vars=False):
 
     print_op = tf.print(
         "[GPU %02d] Restoring pretrained weights (%d Tensors) from: %s" % (
-            #hvd.rank(),
-            0,
+            hvd.rank(),
             len(assign_ops),
             model_path
         ),

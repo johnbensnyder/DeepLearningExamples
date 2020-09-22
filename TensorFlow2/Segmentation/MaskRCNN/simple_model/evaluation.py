@@ -136,8 +136,8 @@ def compute_coco_eval_metric_n(predictions,
 
 
 def compute_coco_eval_metric_nonestimator(predictions,
-                             include_mask=True,
                              annotation_json_file="",
+                             include_mask=True,
                              report_frequency=None):
     """Compute COCO eval metric given a prediction generator.
 

@@ -3,8 +3,9 @@ import sys
 import itertools
 from statistics import mean
 from time import time
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import numpy as np
+import threading
 sys.path.append('..')
 
 
@@ -26,7 +27,7 @@ from mask_rcnn.hyperparameters import dataset_params
 from mask_rcnn.hyperparameters import mask_rcnn_params
 from mask_rcnn import dataset_utils
 import load_weights, model
-from evaluation import compute_coco_eval_metric_nonestimator, process_prediction_for_eval
+from evaluation import compute_coco_eval_metric_nonestimator, process_prediction_for_eval, gather_result_from_all_processes
 
 train_file_pattern = '/home/ubuntu/nv_tfrecords/train*'
 batch_size = 6
@@ -59,29 +60,21 @@ train_tdf = train_input_fn(data_params)
 tdf_iter = train_tdf.make_initializable_iterator()
 features, labels = tdf_iter.get_next()
 
-train_input_fn = dataloader.InputReader(
-    file_pattern=train_file_pattern,
-    mode=tf.estimator.ModeKeys.TRAIN,
-    num_examples=None,
+
+val_file_pattern = '/home/ubuntu/nv_tfrecords/val*'
+val_input_fn = dataloader.InputReader(
+    file_pattern=val_file_pattern,
+    mode=tf.estimator.ModeKeys.PREDICT,
+    num_examples=5000,
     use_fake_data=False,
     use_instance_mask=True,
 )
+val_tdf = val_input_fn(data_params_eval)
+val_iter = val_tdf.make_initializable_iterator()
+features_val = val_iter.get_next()
 
-if hvd.rank() == 0:
-    val_file_pattern = '/home/ubuntu/nv_tfrecords/val*'
-    val_input_fn = dataloader.InputReader(
-        file_pattern=val_file_pattern,
-        mode=tf.estimator.ModeKeys.TRAIN,
-        num_examples=5000,
-        use_fake_data=False,
-        use_instance_mask=True,
-    )
-    val_tdf = val_input_fn(data_params_eval)
-    val_iter = val_tdf.make_initializable_iterator()
-    features_val, labels_val = val_iter.get_next()
-    model_output = model.model(features_val, params, labels_val, False)
-
-train_op, total_loss = model.model(features, params, labels)
+train_op, total_loss = model.model(features, params, labels, labels)
+model_output = model.model(features_val['features'], params, is_training=False)
 
 var_list = load_weights.build_assigment_map('resnet50/')
 checkpoint_file = tf.train.latest_checkpoint('../resnet/resnet-nhwc-2018-02-07/')
@@ -90,15 +83,19 @@ _init_op, _init_feed_dict = load_weights.assign_from_checkpoint(checkpoint_file,
 var_initializer = tf.global_variables_initializer()
 loss_history = []
 steps = 118000//(batch_size * hvd.size())
-#steps = 50
+steps = 10
 val_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+
+
+
 with tf.Session() as sess:
     sess.run(_init_op, _init_feed_dict)
     sess.run(tdf_iter.initializer)
-    if hvd.rank() == 0:
-        sess.run(val_iter.initializer)
+    sess.run(val_iter.initializer)
     sess.run(var_initializer)
     for epoch in range(1):
+        print("starting training")
+        print(hvd.rank())
         if hvd.rank()==0:
             progressbar = tqdm(range(steps))
             loss_history = []
@@ -107,6 +104,7 @@ with tf.Session() as sess:
         for i in progressbar:
             op, loss = sess.run((train_op, total_loss))
             if hvd.rank()==0:
+                print(loss)
                 loss_history.append(loss)
                 progressbar.set_description("Loss: {0:.4f}".format(np.array(loss_history[-50:]).mean()))
 
@@ -125,8 +123,27 @@ with tf.Session() as sess:
                     predictions[k] = [v]
                 else:
                     predictions[k].append(v)
+        
+        predictions_all = gather_result_from_all_processes(predictions)
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+        comm.barrier()
 
-        #print(predictions.keys())
-        compute_coco_eval_metric_nonestimator(predictions, annotation_json_file=val_json_file)
+        if(hvd.rank() == 0):
+            print("#"*20)
+            print(len(predictions_all))
+        predictions_collected = dict()
+        if(hvd.rank() == 0):
+            for out in predictions_all:
+                for k, v in out.items():
+                    if k not in predictions_collected:
+                        predictions_collected[k] = v
+                    else:
+                        predictions_collected[k] += v
+        comm.barrier()
+        
+        #args = [predictions_collected, val_json_file]
+        compute_coco_eval_metric_nonestimator(predictions_collected, val_json_file)
+        #eval_thread.start()
 
-np.save("predictions_nonestimator.npy", predictions)
+#np.save("predictions_all.npy", predictions_all)
