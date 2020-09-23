@@ -8,4 +8,4 @@
     -x LD_LIBRARY_PATH \
     -x PATH \
     --oversubscribe \
-    python train_dl.py
+    python train_v2.py

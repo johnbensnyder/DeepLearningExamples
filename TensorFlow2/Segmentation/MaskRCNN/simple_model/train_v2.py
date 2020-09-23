@@ -37,8 +37,9 @@ from mask_rcnn import dataloader
 from mask_rcnn import mask_rcnn_model
 import load_weights, model_v2
 
-train_file_pattern = '/home/ubuntu/data/coco/tf_record/train*'
-orig_file_pattern = '/home/ubuntu/data/coco/nv_example_tfr/train*'
+#train_file_pattern = '/home/ubuntu/data/coco/tf_record/train*'
+orig_file_pattern = '/home/ubuntu/nv_tfrecords/train*'
+
 batch_size = 4
 data_params = dataset_params.get_data_params()
 params = mask_rcnn_params.default_config().values()
@@ -67,7 +68,23 @@ mask_rcnn = model_v2.MRCNN(params)
 
 train_outputs = model_v2.model_fn(orig_features, orig_labels, params, mask_rcnn, is_training=True)
 
-predictions = model_v2.model_fn(orig_features, orig_labels, params, mask_rcnn, is_training=False)
+val_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+data_params_eval = dataset_params.get_data_params()
+data_params_eval['batch_size'] = 4
+
+val_file_pattern = '/home/ubuntu/nv_tfrecords/val*'
+val_input_fn = dataloader.InputReader(
+    file_pattern=val_file_pattern,
+    mode=tf.estimator.ModeKeys.PREDICT,
+    num_examples=5000,
+    use_fake_data=False,
+    use_instance_mask=True,
+)
+val_tdf = val_input_fn(data_params_eval)
+val_iter = val_tdf.make_initializable_iterator()
+features_val = val_iter.get_next()
+predictions = model_v2.model_fn(features_val, None, params, mask_rcnn, is_training=False)
+
 
 var_list = load_weights.build_assigment_map('mrcnn/resnet50/')
 checkpoint_file = tf.train.latest_checkpoint('../resnet/resnet-nhwc-2018-02-07/')
@@ -75,14 +92,14 @@ _init_op, _init_feed_dict = load_weights.assign_from_checkpoint(checkpoint_file,
 
 sess = tf.Session()
 sess.run(orig_iter.initializer)
+sess.run(val_iter.initializer)
 sess.run(tf.global_variables_initializer())
 sess.run(_init_op, _init_feed_dict)
 
-outputs = sess.run(train_outputs)
-pred = sess.run(predictions)
 
-steps = 5000
 
+#steps = 118000/(hvd.size()*batch_size)
+steps = 200
 if hvd.rank()==0:
     p_bar = tqdm(range(steps))
 else:
@@ -103,3 +120,24 @@ for i in p_bar:
                                                                                    smoothed_rpn_loss,
                                                                                    smoothed_rcnn_loss,
                                                                                    outputs[6]))
+        
+from evaluation import compute_coco_eval_metric_nonestimator, process_prediction_for_eval
+eval_batch_size = 4
+eval_steps = 5000//(eval_batch_size*hvd.size())
+#eval_steps = 200
+progressbar_eval = tqdm(range(eval_steps))
+
+predictions_result = dict()
+for i in progressbar_eval:
+    out= sess.run((predictions))
+    out = process_prediction_for_eval(out)
+
+    for k, v in out.items():
+        if k not in predictions_result:
+            predictions_result[k] = [v]
+        else:
+            predictions_result[k].append(v)
+
+np.save("predictions_result.npy", predictions_result)
+#print(predictions.keys())
+#compute_coco_eval_metric_nonestimator(predictions_result, annotation_json_file=val_json_file)
