@@ -123,7 +123,7 @@ def do_eval(worker_predictions):
 
 train_file_pattern = '/home/ubuntu/data/coco/train*'
 batch_size = 1
-eval_batch_size = 4
+eval_batch_size = 1
 images = 118287
 global_batch_size = batch_size * hvd.size()
 steps_per_epoch = images//(batch_size * hvd.size())
