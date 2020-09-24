@@ -1,3 +1,45 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import copy
+import operator
+import pprint
+import six
+import time
+import itertools
+import collections
+import io
+import threading
+import sys
+sys.path.append('..')
+from PIL import Image
+from evaluation import *
+import numpy as np
+import tensorflow as tf
+
+from mask_rcnn.utils.logging_formatter import logging
+
+from mask_rcnn import coco_metric
+from mask_rcnn.utils import coco_utils
+
+from mask_rcnn.object_detection import visualization_utils
+from mask_rcnn.utils.distributed_utils import MPI_rank
+
+import dllogger
+from dllogger import Verbosity
+import numpy as np
+
+
+import os
+import sys
+import itertools
+from statistics import mean
+from time import time
+from tqdm import tqdm
+import numpy as np
+import threading
+
 import os
 import sys
 sys.path.append('..')
@@ -28,8 +70,60 @@ from mask_rcnn.training import losses, learning_rates
 from simple_model.tf2 import weight_loader, train, scheduler
 from simple_model import model_v2
 
-train_file_pattern = '/home/ubuntu/data/coco/tf_record/train*'
-batch_size = 1
+
+
+def do_eval(worker_predictions):
+    print(f'Length of worker_predictions: {len(worker_predictions)}')
+    logging.info(worker_predictions['source_id'])
+    # DEBUG - print worker predictions
+    # _ = compute_coco_eval_metric_n(worker_predictions, False, validation_json_file)
+    coco = coco_metric.MaskCOCO()
+    _preds = copy.deepcopy(worker_predictions)
+    for k, v in _preds.items():
+        # combined all results in flat structure for eval
+        _preds[k] = np.concatenate(v, axis=0)
+    if MPI_rank() < 32:
+        converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
+        worker_source_ids = _preds['source_id']
+    else:
+        converted_predictions = []
+        worker_source_ids = []
+    
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    comm.barrier()
+    rank = MPI_rank()
+    filename = "worker_source_id_" + str(rank) + ".npy"
+    np.save(filename, worker_source_ids)
+    print(len(worker_source_ids), len(set(worker_source_ids)), MPI_rank())
+    #print(f'Length of converted_predictions: {len(converted_predictions)}')
+    # logging.info(converted_predictions)
+    # gather on rank 0
+    predictions_list = gather_result_from_all_processes(converted_predictions)
+    source_ids_list = gather_result_from_all_processes(worker_source_ids)
+
+    validation_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+    if MPI_rank() == 0:
+        all_predictions = []
+        source_ids = []
+        for i, p in enumerate(predictions_list):
+            if i < 32: # max eval workers (TODO config)
+                all_predictions.extend(p)
+        for i, s in enumerate(source_ids_list):
+            if i < 32:
+                source_ids.extend(s)
+
+        # run metric calculation on root node TODO: launch this in it's own thread
+        #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
+        
+        args = [all_predictions, source_ids, True, validation_json_file]
+        eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
+        eval_thread.start()
+
+
+train_file_pattern = '/home/ubuntu/tfr_anchor/train*'
+batch_size = 4
+eval_batch_size = 4
 images = 118287
 steps_per_epoch = images//(batch_size * hvd.size())
 data_params = dataset_params.get_data_params()
@@ -55,9 +149,24 @@ train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].n
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 train_iter = iter(train_tdf)
 
+data_params_eval = dataset_params.get_data_params()
+data_params_eval['batch_size'] = 4
+
+val_file_pattern = '/home/ubuntu/tfr_anchor/val*'
+val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
+val_tdf = val_loader(data_params_eval)
+val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
+                                                                    buffer_size=tf.data.experimental.AUTOTUNE))
+
+val_iter = iter(val_tdf)
+
+
+
 mask_rcnn = model_v2.MRCNN(params)
 
 features, labels = next(train_iter)
+#features_val, _ = next(val_iter)
+
 model_outputs = mask_rcnn(features, labels, params, is_training=True)
 
 weight_loader.load_resnet_checkpoint(mask_rcnn, '../resnet/resnet-nhwc-2018-02-07/')
@@ -84,19 +193,98 @@ def train_step(features, labels, params, model, opt, first=False):
         hvd.broadcast_variables(opt.variables(), root_rank=0)
     return total_loss
 
+@tf.function
+def pred(features, params):
+    out = mask_rcnn(features, None, params, is_training=False)
+    out['image_info'] = features['image_info']
+    out['source_id'] = features['source_ids']
+    return out
+
+
 _ = train_step(features, labels, params, mask_rcnn, optimizer, first=True)
 
-if hvd.rank()==0:
-    p_bar = tqdm(range(steps_per_epoch))
-    loss_history = []
-else:
-    p_bar = range(steps_per_epoch)
-for i in p_bar:
-    features, labels = next(train_iter)
-    total_loss = train_step(features, labels, params, mask_rcnn, optimizer)
+
+for i in range(20):
+    print(f'Starting Epoch {i}')
+
     if hvd.rank()==0:
-        loss_history.append(total_loss.numpy())
-        smoothed_loss = mean(loss_history[-50:])
-        p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(smoothed_loss, 
-                                                                  schedule(optimizer.iterations)))
+        p_bar = tqdm(range(steps_per_epoch))
+        loss_history = []
+    else:
+        p_bar = range(steps_per_epoch)
+    for i in p_bar:
+        features, labels = next(train_iter)
+        total_loss = train_step(features, labels, params, mask_rcnn, optimizer)
+        if hvd.rank()==0:
+            loss_history.append(total_loss.numpy())
+            smoothed_loss = mean(loss_history[-50:])
+            p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(smoothed_loss, 
+                                                                      schedule(optimizer.iterations)))
+    
+    print("Beginning eval")
+
+    eval_steps = 5000//(eval_batch_size * hvd.size())
+    progressbar_eval = tqdm(range(eval_steps))
+    worker_predictions = dict()    
+    if hvd.rank()==0:
+        progressbar_eval = tqdm(range(eval_steps))
+    else:
+        progressbar_eval = range(eval_steps)
+
+    for i in progressbar_eval:
+        features_val, _ = next(val_iter)
+        out = pred(features_val, params)
+        out = process_prediction_for_eval(out)
+
+        for k, v in out.items():
+            if k not in worker_predictions:
+                worker_predictions[k] = [v]
+            else:
+                worker_predictions[k].append(v)
+
+    print(f'Length of worker_predictions: {len(worker_predictions)}')
+    logging.info(worker_predictions['source_id'])
+    # DEBUG - print worker predictions
+    # _ = compute_coco_eval_metric_n(worker_predictions, False, validation_json_file)
+    coco = coco_metric.MaskCOCO()
+    _preds = copy.deepcopy(worker_predictions)
+    for k, v in _preds.items():
+        # combined all results in flat structure for eval
+        _preds[k] = np.concatenate(v, axis=0)
+    if MPI_rank() < 32:
+        converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
+        worker_source_ids = _preds['source_id']
+    else:
+        converted_predictions = []
+        worker_source_ids = []
+    
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    comm.barrier()
+    rank = MPI_rank()
+    filename = "worker_source_id_" + str(rank) + ".npy"
+    np.save(filename, worker_source_ids)
+    print(len(worker_source_ids), len(set(worker_source_ids)), MPI_rank())
+    #print(f'Length of converted_predictions: {len(converted_predictions)}')
+    # logging.info(converted_predictions)
+    # gather on rank 0
+    predictions_list = gather_result_from_all_processes(converted_predictions)
+    source_ids_list = gather_result_from_all_processes(worker_source_ids)
+
+    validation_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+    if MPI_rank() == 0:
+        all_predictions = []
+        source_ids = []
+        for i, p in enumerate(predictions_list):
+            if i < 32: # max eval workers (TODO config)
+                all_predictions.extend(p)
+        for i, s in enumerate(source_ids_list):
+            if i < 32:
+                source_ids.extend(s)
+
+        # run metric calculation on root node TODO: launch this in it's own thread
+        #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
         
+        args = [all_predictions, source_ids, True, validation_json_file]
+        eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
+        eval_thread.start()    

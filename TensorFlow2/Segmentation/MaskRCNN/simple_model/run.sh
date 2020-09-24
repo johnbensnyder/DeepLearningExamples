@@ -2,7 +2,7 @@
 
 source activate tensorflow2_latest_p37
 
-horovodrun -np 8 --autotune python train_tf2.py
+#horovodrun -np 8 --autotune python train_tf2.py
   
 mpirun -np 8 \
 --H localhost:8 \
