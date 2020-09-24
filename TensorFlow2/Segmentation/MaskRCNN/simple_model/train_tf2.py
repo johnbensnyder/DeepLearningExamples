@@ -144,8 +144,8 @@ params['use_custom_box_proposals_op'] = True
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
 
-loader = dataset_utils.FastDataLoader(train_file_pattern, data_params, training=True)
-train_tdf = loader(data_params)
+loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
+train_tdf = loader(data_params, training=True)
 train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name, 
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 train_iter = iter(train_tdf)
@@ -154,8 +154,8 @@ data_params_eval = dataset_params.get_data_params()
 data_params_eval['batch_size'] = 4
 
 val_file_pattern = '/home/ubuntu/data/coco/val*'
-val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval, training=False)
-val_tdf = val_loader(data_params_eval)
+val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
+val_tdf = val_loader(data_params_eval, training=False)
 val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 
