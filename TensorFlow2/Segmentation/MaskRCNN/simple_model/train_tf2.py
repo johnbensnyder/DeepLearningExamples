@@ -134,7 +134,7 @@ params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
 params['init_learning_rate'] = 0.16
-params['warmup_learning_rate'] = 0.016
+params['warmup_learning_rate'] = 0.0016
 params['warmup_steps'] = steps_per_epoch * 3
 params['learning_rate_steps'] = [steps_per_epoch * 10, steps_per_epoch * 15]
 params['learning_rate_levels'] = [0.016, 0.0016]
@@ -143,6 +143,7 @@ params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
+params['gradient_clip'] = 3
 
 loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
 train_tdf = loader(data_params, training=True)
@@ -188,6 +189,8 @@ def train_step(features, labels, params, model, opt, first=False):
     tape = hvd.DistributedGradientTape(tape)
     scaled_gradients = tape.gradient(scaled_loss, model.trainable_variables)
     gradients = optimizer.get_unscaled_gradients(scaled_gradients)
+    clipped_grads, global_norm = tf.clip_by_global_norm(gradients, params['gradient_clip'])
+    gradients = clipped_grads
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     if first:
         hvd.broadcast_variables(model.variables, 0)
