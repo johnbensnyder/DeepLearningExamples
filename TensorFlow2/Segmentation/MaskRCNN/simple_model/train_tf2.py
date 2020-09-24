@@ -151,7 +151,7 @@ train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].n
 train_iter = iter(train_tdf)
 
 data_params_eval = dataset_params.get_data_params()
-data_params_eval['batch_size'] = 4
+data_params_eval['batch_size'] = 1
 
 val_file_pattern = '/home/ubuntu/data/coco/val*'
 val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
