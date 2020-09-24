@@ -122,22 +122,24 @@ for i in p_bar:
                                                                                    outputs[6]))
         
 from evaluation import compute_coco_eval_metric_nonestimator, process_prediction_for_eval
-eval_batch_size = 4
-eval_steps = 5000//(eval_batch_size*hvd.size())
-#eval_steps = 200
-progressbar_eval = tqdm(range(eval_steps))
 
-predictions_result = dict()
-for i in progressbar_eval:
-    out= sess.run((predictions))
-    out = process_prediction_for_eval(out)
+if hvd.rank() == 0:
+    eval_batch_size = 4
+    eval_steps = 5000//(eval_batch_size*hvd.size())
+    #eval_steps = 200
+    progressbar_eval = tqdm(range(eval_steps))
 
-    for k, v in out.items():
-        if k not in predictions_result:
-            predictions_result[k] = [v]
-        else:
-            predictions_result[k].append(v)
+    predictions_result = dict()
+    for i in progressbar_eval:
+        out= sess.run((predictions))
+        out = process_prediction_for_eval(out)
 
-np.save("predictions_result.npy", predictions_result)
+        for k, v in out.items():
+            if k not in predictions_result:
+                predictions_result[k] = [v]
+            else:
+                predictions_result[k].append(v)
+
+
 #print(predictions.keys())
-#compute_coco_eval_metric_nonestimator(predictions_result, annotation_json_file=val_json_file)
+    compute_coco_eval_metric_nonestimator(predictions_result, annotation_json_file=val_json_file)

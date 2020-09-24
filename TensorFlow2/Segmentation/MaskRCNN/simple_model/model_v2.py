@@ -213,7 +213,8 @@ class MRCNN(tf.keras.Model):
                 generate_detections_fn = postprocess_ops.generate_detections_gpu
 
             else:
-                generate_detections_fn = postprocess_ops.generate_detections_tpu
+                #generate_detections_fn = postprocess_ops.generate_detections_tpu
+                generate_detections_fn = postprocess_ops.generate_detections_gpu
 
             detections = generate_detections_fn(
                 class_outputs=class_outputs,
