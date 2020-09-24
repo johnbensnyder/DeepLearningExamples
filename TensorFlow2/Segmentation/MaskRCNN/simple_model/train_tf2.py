@@ -204,10 +204,10 @@ def pred(features, params):
 _ = train_step(features, labels, params, mask_rcnn, optimizer, first=True)
 
 
-for i in range(20):
-    print(f'Starting Epoch {i}')
+for epoch in range(20):
 
     if hvd.rank()==0:
+        print(f'Starting Epoch {epoch}')
         p_bar = tqdm(range(steps_per_epoch))
         loss_history = []
     else:
@@ -221,12 +221,12 @@ for i in range(20):
             p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(smoothed_loss, 
                                                                       schedule(optimizer.iterations)))
     
-    print("Beginning eval")
 
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
     if hvd.rank()==0:
+        print("Beginning eval")
         progressbar_eval = tqdm(range(eval_steps))
     else:
         progressbar_eval = range(eval_steps)
@@ -242,7 +242,6 @@ for i in range(20):
             else:
                 worker_predictions[k].append(v)
 
-    print(f'Length of worker_predictions: {len(worker_predictions)}')
     logging.info(worker_predictions['source_id'])
     # DEBUG - print worker predictions
     # _ = compute_coco_eval_metric_n(worker_predictions, False, validation_json_file)
@@ -262,9 +261,6 @@ for i in range(20):
     comm = MPI.COMM_WORLD
     comm.barrier()
     rank = MPI_rank()
-    filename = "worker_source_id_" + str(rank) + ".npy"
-    np.save(filename, worker_source_ids)
-    print(len(worker_source_ids), len(set(worker_source_ids)), MPI_rank())
     #print(f'Length of converted_predictions: {len(converted_predictions)}')
     # logging.info(converted_predictions)
     # gather on rank 0
