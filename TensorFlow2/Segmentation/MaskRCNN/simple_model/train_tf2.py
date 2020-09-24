@@ -52,7 +52,7 @@ hvd.init()
 
 physical_devices = tf.config.list_physical_devices('GPU')
 # tf.config.experimental.set_memory_growth(physical_devices[hvd.rank()], True)
-tf.config.set_visible_devices(physical_devices[hvd.rank()], 'GPU')
+tf.config.set_visible_devices(physical_devices[hvd.local_rank()], 'GPU')
 devices = tf.config.list_logical_devices('GPU')
 
 tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
@@ -102,7 +102,7 @@ def do_eval(worker_predictions):
     predictions_list = gather_result_from_all_processes(converted_predictions)
     source_ids_list = gather_result_from_all_processes(worker_source_ids)
 
-    validation_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+    validation_json_file="/home/ubuntu/data/annotations/instances_val2017.json"
     if MPI_rank() == 0:
         all_predictions = []
         source_ids = []
@@ -121,10 +121,11 @@ def do_eval(worker_predictions):
         eval_thread.start()
 
 
-train_file_pattern = '/home/ubuntu/tfr_anchor/train*'
+train_file_pattern = '/home/ubuntu/data/coco/train*'
 batch_size = 4
 eval_batch_size = 4
 images = 118287
+global_batch_size = batch_size * hvd.size()
 steps_per_epoch = images//(batch_size * hvd.size())
 data_params = dataset_params.get_data_params()
 params = mask_rcnn_params.default_config().values()
@@ -132,11 +133,11 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = 2e-3 * batch_size * hvd.size()
-params['warmup_learning_rate'] = 2e-4 * batch_size * hvd.size()
-params['warmup_steps'] = 2000//hvd.size()
+params['init_learning_rate'] = 1e-2 * global_batch_size / 8
+params['warmup_learning_rate'] = 1e-3 * global_batch_size / 8
+params['warmup_steps'] = 2048//hvd.size()
 params['learning_rate_steps'] = [steps_per_epoch * 9, steps_per_epoch * 11]
-params['learning_rate_levels'] = [2e-4 * batch_size, 2e-5 * batch_size]
+params['learning_rate_levels'] = [1e-3 * global_batch_size / 8, 1e-4 * global_batch_size / 8]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
@@ -152,7 +153,7 @@ train_iter = iter(train_tdf)
 data_params_eval = dataset_params.get_data_params()
 data_params_eval['batch_size'] = 4
 
-val_file_pattern = '/home/ubuntu/tfr_anchor/val*'
+val_file_pattern = '/home/ubuntu/data/coco/val*'
 val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
 val_tdf = val_loader(data_params_eval)
 val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
@@ -267,7 +268,7 @@ for epoch in range(20):
     predictions_list = gather_result_from_all_processes(converted_predictions)
     source_ids_list = gather_result_from_all_processes(worker_source_ids)
 
-    validation_json_file="/home/ubuntu/nv_tfrecords/annotations/instances_val2017.json"
+    validation_json_file="/home/ubuntu/data/annotations/instances_val2017.json"
     if MPI_rank() == 0:
         all_predictions = []
         source_ids = []
