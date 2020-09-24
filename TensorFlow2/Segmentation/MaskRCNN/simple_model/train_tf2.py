@@ -12,7 +12,7 @@ import collections
 import io
 import threading
 import sys
-sys.path.append('/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN')
+sys.path.append('..')
 from PIL import Image
 from evaluation import *
 import numpy as np
@@ -123,7 +123,7 @@ def do_eval(worker_predictions):
 
 train_file_pattern = '/home/ubuntu/data/coco/train*'
 batch_size = 1
-eval_batch_size = 1
+eval_batch_size = 4
 images = 118287
 global_batch_size = batch_size * hvd.size()
 steps_per_epoch = images//(batch_size * hvd.size())
@@ -133,29 +133,31 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = .16
-params['warmup_learning_rate'] = .016
-params['warmup_steps'] = steps_per_epoch
-params['learning_rate_steps'] = [steps_per_epoch * 9, steps_per_epoch * 11]
-params['learning_rate_levels'] = [.016, .0016]
+params['init_learning_rate'] = 1e-2 * global_batch_size / 8
+params['warmup_learning_rate'] = 1e-3 * global_batch_size / 8
+params['warmup_steps'] = 2048//hvd.size()
+params['learning_rate_steps'] = [steps_per_epoch * 8, steps_per_epoch * 11]
+params['learning_rate_levels'] = [1e-3 * global_batch_size / 8, 1e-4 * global_batch_size / 8]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
-params['gradient_clip'] = 3
-loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
+
+loader = dataset_utils.FastDataLoader(train_file_pattern, data_params, training=True)
 train_tdf = loader(data_params)
 train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name, 
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 train_iter = iter(train_tdf)
 
 data_params_eval = dataset_params.get_data_params()
-data_params_eval['batch_size'] = 1
+data_params_eval['batch_size'] = 4
 
 val_file_pattern = '/home/ubuntu/data/coco/val*'
-val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
-val_tdf = val_loader(data_params_eval).repeat()
+val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval, training=False)
+val_tdf = val_loader(data_params_eval)
+val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
+                                                                    buffer_size=tf.data.experimental.AUTOTUNE))
 
 val_iter = iter(val_tdf)
 
@@ -168,7 +170,7 @@ features, labels = next(train_iter)
 
 model_outputs = mask_rcnn(features, labels, params, is_training=True)
 
-weight_loader.load_resnet_checkpoint(mask_rcnn, '/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/')
+weight_loader.load_resnet_checkpoint(mask_rcnn, '../resnet/resnet-nhwc-2018-02-07/')
 
 schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(params['learning_rate_steps'],
                                                                 [params['init_learning_rate']] \
@@ -186,8 +188,6 @@ def train_step(features, labels, params, model, opt, first=False):
     tape = hvd.DistributedGradientTape(tape)
     scaled_gradients = tape.gradient(scaled_loss, model.trainable_variables)
     gradients = optimizer.get_unscaled_gradients(scaled_gradients)
-    clipped_grads, global_norm = tf.clip_by_global_norm(gradients, params['gradient_clip'])
-    gradients = clipped_grads
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     if first:
         hvd.broadcast_variables(model.variables, 0)

@@ -66,7 +66,7 @@ class FastDataLoader(object):
         self.image_preprocess = PreprocessImage(params)
         self.params = params
     
-    def __call__(self, params, input_context=None):
+    def __call__(self, params, input_context=None, train=True):
         batch_size = params['batch_size'] if 'batch_size' in params else 1
         try:
             seed = params['seed'] * hvd.rank()
@@ -109,11 +109,12 @@ class FastDataLoader(object):
         
         dataset = dataset.cache()
         
-        dataset = dataset.shuffle(
-            buffer_size=4096,
-            reshuffle_each_iteration=True,
-            seed=seed
-        )
+        if train:
+            dataset = dataset.shuffle(
+                buffer_size=4096,
+                reshuffle_each_iteration=True,
+                seed=seed
+            )
         
         dataset = dataset.repeat()
         
