@@ -170,7 +170,7 @@ features, labels = next(train_iter)
 
 model_outputs = mask_rcnn(features, labels, params, is_training=True)
 
-weight_loader.load_resnet_checkpoint(mask_rcnn, '../resnet/resnet-nhwc-2018-02-07/')
+weight_loader.load_resnet_checkpoint(mask_rcnn, '/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/')
 
 schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(params['learning_rate_steps'],
                                                                 [params['init_learning_rate']] \
