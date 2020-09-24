@@ -12,7 +12,7 @@ import collections
 import io
 import threading
 import sys
-sys.path.append('..')
+sys.path.append('/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN')
 from PIL import Image
 from evaluation import *
 import numpy as np
@@ -122,7 +122,7 @@ def do_eval(worker_predictions):
 
 
 train_file_pattern = '/home/ubuntu/data/coco/train*'
-batch_size = 4
+batch_size = 1
 eval_batch_size = 4
 images = 118287
 global_batch_size = batch_size * hvd.size()
