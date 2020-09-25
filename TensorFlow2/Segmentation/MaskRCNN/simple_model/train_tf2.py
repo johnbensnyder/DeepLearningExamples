@@ -56,7 +56,7 @@ physical_devices = tf.config.list_physical_devices('GPU')
 tf.config.set_visible_devices(physical_devices[hvd.local_rank()], 'GPU')
 devices = tf.config.list_logical_devices('GPU')
 
-tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
+# tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
 #policy = mixed_precision.Policy('mixed_float16')
 #mixed_precision.set_policy(policy)
 
@@ -135,11 +135,11 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = 0.36
-params['warmup_learning_rate'] = 0.0036
-params['warmup_steps'] = steps_per_epoch * 3
-params['learning_rate_steps'] = [375*12, 500*12]
-params['learning_rate_levels'] = [0.036, 0.0036]
+params['init_learning_rate'] = 0.24
+params['warmup_learning_rate'] = 0.0024
+params['warmup_steps'] = 1800
+params['learning_rate_steps'] = [5625-1800, 7500-1800]
+params['learning_rate_levels'] = [0.024, 0.0024]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
@@ -160,7 +160,7 @@ train_iter = iter(train_tdf)
 '''
 
 data_params_eval = dataset_params.get_data_params()
-data_params_eval['batch_size'] = 4
+data_params_eval['batch_size'] = 1
 
 '''val_file_pattern = '/home/ubuntu/data/coco/val*'
 val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
@@ -191,7 +191,8 @@ schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(params['learning
 schedule = scheduler.WarmupScheduler(schedule, params['warmup_learning_rate'],
                                      params['warmup_steps'])
 optimizer = tf.keras.optimizers.SGD(schedule, momentum=0.9)
-optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(optimizer, 'dynamic')
+# optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(optimizer, 'dynamic')
+optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer, loss_scale='dynamic')
 
 @tf.function
 def train_step(features, labels, params, model, opt, first=False):
