@@ -122,7 +122,8 @@ def do_eval(worker_predictions):
 
 
 train_file_pattern = '/home/ubuntu/tfr_anchor/train*'
-batch_size = 4
+batch_size = 1
+global_batch_size = batch_size*hvd.size()
 eval_batch_size = 4
 images = 118287
 steps_per_epoch = images//(batch_size * hvd.size())
@@ -132,11 +133,11 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = 2e-3 * batch_size * hvd.size()
-params['warmup_learning_rate'] = 2e-4 * batch_size * hvd.size()
-params['warmup_steps'] = 2000//hvd.size()
+params['init_learning_rate'] = 1e-2 * global_batch_size / 8
+params['warmup_learning_rate'] = 1e-3 * global_batch_size / 8
+params['warmup_steps'] = 2048//hvd.size()
 params['learning_rate_steps'] = [steps_per_epoch * 9, steps_per_epoch * 11]
-params['learning_rate_levels'] = [2e-4 * batch_size, 2e-5 * batch_size]
+params['learning_rate_levels'] = [1e-3 * global_batch_size / 8, 1e-4 * global_batch_size / 8]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
@@ -214,7 +215,10 @@ for epoch in range(20):
         p_bar = range(steps_per_epoch)
     for i in p_bar:
         features, labels = next(train_iter)
+        import time
+        start = time.time()
         total_loss = train_step(features, labels, params, mask_rcnn, optimizer)
+        print(f'Time taken: {time.time()-start}')
         if hvd.rank()==0:
             loss_history.append(total_loss.numpy())
             smoothed_loss = mean(loss_history[-50:])
