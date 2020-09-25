@@ -162,9 +162,9 @@ val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
 
 val_iter = iter(val_tdf)
 '''
-from mask_rcnn import dataloader
+from mask_rcnn import val_reader
 val_file_pattern = '/home/ubuntu/data/nv_coco/val*'
-val_loader = dataloader.InputReader(file_pattern=val_file_pattern, use_instance_mask=True)
+val_loader = val_reader.ValReader(file_pattern=val_file_pattern, use_instance_mask=True)
 val_tdf = val_loader(data_params_eval)
 val_iter = iter(val_tdf)
 
