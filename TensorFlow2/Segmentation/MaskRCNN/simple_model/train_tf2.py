@@ -154,15 +154,19 @@ train_iter = iter(train_tdf)
 data_params_eval = dataset_params.get_data_params()
 data_params_eval['batch_size'] = 4
 
-val_file_pattern = '/home/ubuntu/data/coco/val*'
+'''val_file_pattern = '/home/ubuntu/data/coco/val*'
 val_loader = dataset_utils.FastDataLoader(val_file_pattern, data_params_eval)
 val_tdf = val_loader(data_params_eval, training=False)
 val_tdf = val_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name,
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 
 val_iter = iter(val_tdf)
-
-
+'''
+from mask_rcnn import dataloader
+val_file_pattern = '/home/ubuntu/data/nv_coco/val*'
+val_loader = dataloader.InputReader(file_pattern=val_file_pattern, mode='infer', use_instance_mask=True)
+val_tdf = val_loader(data_params_eval)
+val_iter = iter(val_tdf)
 
 mask_rcnn = model_v2.MRCNN(params)
 
