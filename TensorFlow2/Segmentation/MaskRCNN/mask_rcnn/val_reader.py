@@ -45,10 +45,10 @@ class ValReader(object):
         
         dataset = tf.data.TFRecordDataset(files)
         _shard_idx, _num_shards = MPI_rank_and_size()
-        #dataset = dataset.shard(_shard_idx, _num_shards)
+        dataset = dataset.shard(_num_shards, _shard_idx)
         parser = lambda x: dataset_parser(x, 'infer', params, self._use_instance_mask, seed=seed)
         dataset = dataset.map(parser , num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        dataset = dataset.shard(_shard_idx, _num_shards)
+        #dataset = dataset.shard(_shard_idx, _num_shards)
         dataset = dataset.batch(batch_size=batch_size,drop_remainder=True)
         dataset = dataset.repeat()
         dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
