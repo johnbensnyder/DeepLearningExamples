@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from time import sleep
 import copy
 import operator
 import pprint
@@ -132,11 +133,11 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = 0.16
-params['warmup_learning_rate'] = 0.0016
+params['init_learning_rate'] = 0.24
+params['warmup_learning_rate'] = 0.0024
 params['warmup_steps'] = steps_per_epoch * 3
-params['learning_rate_steps'] = [steps_per_epoch * 10, steps_per_epoch * 15]
-params['learning_rate_levels'] = [0.016, 0.0016]
+params['learning_rate_steps'] = [375*10, 500*10]
+params['learning_rate_levels'] = [0.024, 0.0024]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
@@ -228,7 +229,8 @@ for epoch in range(20):
             p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(smoothed_loss, 
                                                                       schedule(optimizer.iterations)))
     
-
+    # for testing, eval need time to catch up
+    sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
@@ -290,4 +292,7 @@ for epoch in range(20):
         
         args = [all_predictions, source_ids, True, validation_json_file]
         eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
-        eval_thread.start()    
+        eval_thread.start()   
+eval_thread.join()
+print("Done Training")
+
