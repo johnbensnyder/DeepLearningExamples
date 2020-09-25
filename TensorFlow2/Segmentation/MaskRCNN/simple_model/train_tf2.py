@@ -122,7 +122,7 @@ def do_eval(worker_predictions):
         eval_thread.start()
 
 
-train_file_pattern = '/home/ubuntu/data/coco/train*'
+train_file_pattern = '/home/ubuntu/data/nv_coco/train*'
 batch_size = 1
 eval_batch_size = 4
 images = 118287
