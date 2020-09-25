@@ -67,6 +67,7 @@ from mask_rcnn.tf2_model import MaskRCNN
 from mask_rcnn.hyperparameters import dataset_params
 from mask_rcnn.hyperparameters import mask_rcnn_params
 from mask_rcnn import dataset_utils
+from mask_rcnn import dataloader
 from mask_rcnn.training import losses, learning_rates
 from simple_model.tf2 import weight_loader, train, scheduler
 from simple_model import model_v2
@@ -144,11 +145,14 @@ params['use_custom_box_proposals_op'] = True
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
 params['gradient_clip'] = 3
-
-loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
+params['augment_input_data'] = True
+'''loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
 train_tdf = loader(data_params, training=True)
 train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name, 
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
+train_iter = iter(train_tdf)'''
+loader = dataloader.InputReader(train_file_pattern, use_instance_mask=True)
+train_tdf = loader(data_params)
 train_iter = iter(train_tdf)
 
 data_params_eval = dataset_params.get_data_params()
