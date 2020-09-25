@@ -47,7 +47,7 @@ class ValReader(object):
         _shard_idx, _num_shards = MPI_rank_and_size()
         #dataset = dataset.shard(_shard_idx, _num_shards)
         parser = lambda x: dataset_parser(x, 'infer', params, self._use_instance_mask, seed=seed)
-        dataset = dataset.map(parser , num_parallel_call=tf.data.experimental.AUTOTUNE)
+        dataset = dataset.map(parser , num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.shard(_shard_idx, _num_shards)
         dataset = dataset.batch(batch_size=batch_size,drop_remainder=True)
         dataset = dataset.repeat()
