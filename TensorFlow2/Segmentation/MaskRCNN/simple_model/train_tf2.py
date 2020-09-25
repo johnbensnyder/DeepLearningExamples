@@ -115,7 +115,6 @@ def do_eval(worker_predictions):
 
         # run metric calculation on root node TODO: launch this in it's own thread
         #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
-        
         args = [all_predictions, source_ids, True, validation_json_file]
         eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
         eval_thread.start()
@@ -258,7 +257,7 @@ for epoch in range(20):
     for k, v in _preds.items():
         # combined all results in flat structure for eval
         _preds[k] = np.concatenate(v, axis=0)
-    if MPI_rank() < 32:
+    if MPI_rank() < 512:
         converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
         worker_source_ids = _preds['source_id']
     else:
@@ -280,11 +279,11 @@ for epoch in range(20):
         all_predictions = []
         source_ids = []
         for i, p in enumerate(predictions_list):
-            if i < 32: # max eval workers (TODO config)
-                all_predictions.extend(p)
+            if i < 512: # max eval workers (TODO config)
+            all_predictions.extend(p)
         for i, s in enumerate(source_ids_list):
-            if i < 32:
-                source_ids.extend(s)
+            if i < 512:
+            source_ids.extend(s)
 
         # run metric calculation on root node TODO: launch this in it's own thread
         #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
