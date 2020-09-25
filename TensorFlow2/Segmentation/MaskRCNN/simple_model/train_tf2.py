@@ -43,7 +43,7 @@ import threading
 import os
 import sys
 sys.path.append('..')
-os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=fusible"
+# os.environ['TF_XLA_FLAGS'] = "--tf_xla_auto_jit=fusible"
 import tensorflow as tf
 from tensorflow.keras.mixed_precision import experimental as mixed_precision
 
