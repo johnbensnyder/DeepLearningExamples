@@ -178,6 +178,7 @@ class InputReader(object):
         #            )
         #        )
 
+        '''
         data_options = tf.data.Options()
 
         data_options.experimental_deterministic = seed is not None
@@ -218,6 +219,7 @@ class InputReader(object):
         # data_options.experimental_stats.latency_all_edges = True
 
         dataset = dataset.with_options(data_options)
+        '''
 
         return dataset
 

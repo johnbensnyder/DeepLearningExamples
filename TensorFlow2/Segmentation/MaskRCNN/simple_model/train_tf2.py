@@ -125,7 +125,7 @@ def do_eval(worker_predictions):
 train_file_pattern = '/home/ubuntu/data/coco/train*'
 nv_train_file_pattern = '/home/ubuntu/data/nv_coco/train*'
 batch_size = 1
-eval_batch_size = 4
+eval_batch_size = 1
 images = 118287
 global_batch_size = batch_size * hvd.size()
 steps_per_epoch = images//(batch_size * hvd.size())
@@ -145,19 +145,20 @@ params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
-params['gradient_clip'] = 3
+params['gradient_clip'] = 0
 params['augment_input_data'] = True
 
+'''
 loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
 train_tdf = loader(data_params, training=True)
 train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name, 
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
 train_iter = iter(train_tdf)
-
-'''loader = dataloader.InputReader(nv_train_file_pattern, use_instance_mask=True)
+'''
+loader = dataloader.InputReader(nv_train_file_pattern, use_instance_mask=True)
 train_tdf = loader(data_params)
 train_iter = iter(train_tdf)
-'''
+
 
 data_params_eval = dataset_params.get_data_params()
 data_params_eval['batch_size'] = 1
@@ -202,8 +203,9 @@ def train_step(features, labels, params, model, opt, first=False):
     tape = hvd.DistributedGradientTape(tape)
     scaled_gradients = tape.gradient(scaled_loss, model.trainable_variables)
     gradients = optimizer.get_unscaled_gradients(scaled_gradients)
-    clipped_grads, global_norm = tf.clip_by_global_norm(gradients, params['gradient_clip'])
-    gradients = clipped_grads
+    if params['gradient_clip']>0:
+        clipped_grads, global_norm = tf.clip_by_global_norm(gradients, params['gradient_clip'])
+        gradients = clipped_grads
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     if first:
         hvd.broadcast_variables(model.variables, 0)
@@ -242,7 +244,7 @@ for epoch in range(22):
         if hvd.rank()==0:
             mask_rcnn.save_weights('checkpoints/epoch_18')
     # for testing, eval need time to catch up
-    sleep(60)
+    # sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
