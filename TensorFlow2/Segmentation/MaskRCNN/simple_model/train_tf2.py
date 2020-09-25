@@ -122,7 +122,8 @@ def do_eval(worker_predictions):
         eval_thread.start()
 
 
-train_file_pattern = '/home/ubuntu/data/nv_coco/train*'
+train_file_pattern = '/home/ubuntu/data/coco/train*'
+nv_train_file_pattern = '/home/ubuntu/data/nv_coco/train*'
 batch_size = 1
 eval_batch_size = 4
 images = 118287
@@ -146,14 +147,17 @@ params['amp'] = True
 params['include_groundtruth_in_features'] = True
 params['gradient_clip'] = 3
 params['augment_input_data'] = True
-'''loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
+
+loader = dataset_utils.FastDataLoader(train_file_pattern, data_params)
 train_tdf = loader(data_params, training=True)
 train_tdf = train_tdf.apply(tf.data.experimental.prefetch_to_device(devices[0].name, 
                                                                     buffer_size=tf.data.experimental.AUTOTUNE))
-train_iter = iter(train_tdf)'''
-loader = dataloader.InputReader(train_file_pattern, use_instance_mask=True)
+train_iter = iter(train_tdf)
+
+'''loader = dataloader.InputReader(nv_train_file_pattern, use_instance_mask=True)
 train_tdf = loader(data_params)
 train_iter = iter(train_tdf)
+'''
 
 data_params_eval = dataset_params.get_data_params()
 data_params_eval['batch_size'] = 4
@@ -295,8 +299,10 @@ for epoch in range(20):
         #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
         
         args = [all_predictions, source_ids, True, validation_json_file]
+        # threading causing CPU stalls
         eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
         eval_thread.start()   
-eval_thread.join()
+        #compute_coco_eval_metric_n(*args)
+#eval_thread.join()
 print("Done Training")
 
