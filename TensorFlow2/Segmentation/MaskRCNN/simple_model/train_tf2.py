@@ -164,7 +164,7 @@ val_iter = iter(val_tdf)
 '''
 from mask_rcnn import dataloader
 val_file_pattern = '/home/ubuntu/data/nv_coco/val*'
-val_loader = dataloader.InputReader(file_pattern=val_file_pattern, mode='infer', use_instance_mask=True)
+val_loader = dataloader.InputReader(file_pattern=val_file_pattern, use_instance_mask=True)
 val_tdf = val_loader(data_params_eval)
 val_iter = iter(val_tdf)
 
@@ -240,7 +240,7 @@ for epoch in range(20):
         progressbar_eval = range(eval_steps)
 
     for i in progressbar_eval:
-        features_val = next(val_iter)
+        features_val, _ = next(val_iter)
         out = pred(features_val, params)
         out = process_prediction_for_eval(out)
 
