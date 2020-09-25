@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from time import sleep
 import copy
 import operator
 import pprint
@@ -228,7 +229,8 @@ for epoch in range(20):
             p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(smoothed_loss, 
                                                                       schedule(optimizer.iterations)))
     
-
+    # for testing, eval need time to catch up
+    sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
