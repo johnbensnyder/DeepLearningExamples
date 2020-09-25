@@ -244,7 +244,7 @@ for epoch in range(22):
         if hvd.rank()==0:
             mask_rcnn.save_weights('checkpoints/epoch_18')
     # for testing, eval need time to catch up
-    # sleep(60)
+    sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
