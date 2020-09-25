@@ -135,11 +135,11 @@ data_params['batch_size'] = batch_size
 params['finetune_bn'] = False
 params['train_batch_size'] = batch_size
 params['l2_weight_decay'] = 1e-4
-params['init_learning_rate'] = 0.26
-params['warmup_learning_rate'] = 0.0028
+params['init_learning_rate'] = 0.32
+params['warmup_learning_rate'] = 0.0032
 params['warmup_steps'] = steps_per_epoch * 4
 params['learning_rate_steps'] = [375*12, 500*12]
-params['learning_rate_levels'] = [0.028, 0.0028]
+params['learning_rate_levels'] = [0.032, 0.0032]
 params['momentum'] = 0.9
 params['use_batched_nms'] = False
 params['use_custom_box_proposals_op'] = True
@@ -220,7 +220,7 @@ def pred(features, params):
 _ = train_step(features, labels, params, mask_rcnn, optimizer, first=True)
 
 
-for epoch in range(20):
+for epoch in range(22):
 
     if hvd.rank()==0:
         print(f'Starting Epoch {epoch}')
