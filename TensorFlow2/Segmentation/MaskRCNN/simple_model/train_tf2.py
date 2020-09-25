@@ -240,7 +240,7 @@ for epoch in range(20):
         progressbar_eval = range(eval_steps)
 
     for i in progressbar_eval:
-        features_val, _ = next(val_iter)
+        features_val = next(val_iter)
         out = pred(features_val, params)
         out = process_prediction_for_eval(out)
 
