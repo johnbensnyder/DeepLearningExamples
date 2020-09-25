@@ -244,7 +244,7 @@ for epoch in range(22):
         if hvd.rank()==0:
             mask_rcnn.save_weights('checkpoints/epoch_18')
     # for testing, eval need time to catch up
-    sleep(60)
+    #sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
     progressbar_eval = tqdm(range(eval_steps))
     worker_predictions = dict()    
@@ -306,9 +306,9 @@ for epoch in range(22):
         
         args = [all_predictions, source_ids, True, validation_json_file]
         # threading causing CPU stalls
-        eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
-        eval_thread.start()   
-        #compute_coco_eval_metric_n(*args)
+        #eval_thread = threading.Thread(target=compute_coco_eval_metric_n, name="eval-thread", args=args)
+        #eval_thread.start()   
+        compute_coco_eval_metric_n(*args)
 #eval_thread.join()
 print("Done Training")
 
