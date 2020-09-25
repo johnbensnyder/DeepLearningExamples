@@ -280,10 +280,10 @@ for epoch in range(20):
         source_ids = []
         for i, p in enumerate(predictions_list):
             if i < 512: # max eval workers (TODO config)
-            all_predictions.extend(p)
+                all_predictions.extend(p)
         for i, s in enumerate(source_ids_list):
             if i < 512:
-            source_ids.extend(s)
+                source_ids.extend(s)
 
         # run metric calculation on root node TODO: launch this in it's own thread
         #compute_coco_eval_metric_n(all_predictions, source_ids, True, validation_json_file)
