@@ -141,8 +141,8 @@ params['warmup_steps'] = 1800
 params['learning_rate_steps'] = [5625-1800, 7500-1800]
 params['learning_rate_levels'] = [0.024, 0.0024]
 params['momentum'] = 0.9
-params['use_batched_nms'] = False
-params['use_custom_box_proposals_op'] = True
+params['use_batched_nms'] = True
+params['use_custom_box_proposals_op'] = False
 params['amp'] = True
 params['include_groundtruth_in_features'] = True
 params['gradient_clip'] = 0
@@ -242,7 +242,7 @@ for epoch in range(22):
     
     if epoch==18:
         if hvd.rank()==0:
-            mask_rcnn.save_weights('checkpoints/epoch_18')
+            mask_rcnn.save('checkpoints/epoch_18.h5')
     # for testing, eval need time to catch up
     #sleep(60)
     eval_steps = 5000//(eval_batch_size * hvd.size())
