@@ -37,9 +37,6 @@ class ValReader(object):
         if MPI_is_distributed():
             n_gpus = MPI_size()
 
-        elif input_context is not None:
-            n_gpus = input_context.num_input_pipelines
-
         else:
             n_gpus = 1
         
