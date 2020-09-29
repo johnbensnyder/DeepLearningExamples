@@ -770,8 +770,8 @@ class SessionModel(object):
             config.gpu_options.force_gpu_compatible = False
         else:
             config.gpu_options.force_gpu_compatible = True
-            if MPI_is_distributed():
-                config.gpu_options.visible_device_list = str(MPI_local_rank())
+            #if MPI_is_distributed():
+            #    config.gpu_options.visible_device_list = str(MPI_local_rank())
         if use_xla:
             logging.info("XLA is activated - Experiment Feature")
             config.graph_options.optimizer_options.global_jit_level = tf.compat.v1.OptimizerOptions.ON_1

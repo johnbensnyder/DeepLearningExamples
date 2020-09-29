@@ -23,6 +23,8 @@ from __future__ import print_function
 
 import os
 
+from mpi4py import MPI
+os.environ["CUDA_VISIBLE_DEVICES"]=str(MPI.COMM_WORLD.Get_rank()%8)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_op=0,executor=0'
 # os.environ["TF_XLA_FLAGS"] = 'tf_xla_print_cluster_outputs=1'
