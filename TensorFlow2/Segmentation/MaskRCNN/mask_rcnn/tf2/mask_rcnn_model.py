@@ -52,7 +52,7 @@ from mask_rcnn.ops import training_ops
 
 from mask_rcnn.utils.logging_formatter import logging
 
-from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_local_rank, MPI_rank
+from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_size, MPI_local_rank, MPI_rank
 from mask_rcnn import evaluation, coco_metric
 
 from mask_rcnn.utils.meters import StandardMeter
@@ -65,8 +65,8 @@ from mask_rcnn.tf2.utils import warmup_scheduler, eager_mapping
 from mask_rcnn.utils.meters import StandardMeter
 from mask_rcnn.utils.metric_tracking import register_metric
 
-hvd = LazyImport("horovod.tensorflow")
-
+#hvd = LazyImport("horovod.tensorflow")
+import herring.tensorflow as herring
 MODELS = dict()
 
 
@@ -901,7 +901,7 @@ class TapeModel(object):
             if self.params.amp:
                 scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
         if MPI_is_distributed():
-            tape = hvd.DistributedGradientTape(tape, compression=hvd.compression.NoneCompressor)
+            tape = herring.DistributedGradientTape(tape, compression=herring.Compression.fp16)
         if self.params.amp:
             scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
             gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
@@ -911,11 +911,11 @@ class TapeModel(object):
         if MPI_is_distributed() and sync_weights:
             if MPI_rank()==0:
                 logging.info("Broadcasting variables")
-            hvd.broadcast_variables(self.forward.variables, 0)
+            herring.broadcast_variables(self.forward.variables, 0)
         if MPI_is_distributed() and sync_opt:
             if MPI_rank()==0:
                 logging.info("Broadcasting optimizer")
-            hvd.broadcast_variables(self.optimizer.variables(), 0)
+            herring.broadcast_variables(self.optimizer.variables(), 0)
         return loss_dict
     
     def initialize_model(self):

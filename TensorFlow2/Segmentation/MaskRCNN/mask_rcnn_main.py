@@ -30,16 +30,18 @@ os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_
 from absl import app
 
 import tensorflow as tf
-from tensorflow.python.framework.ops import disable_eager_execution
+#from tensorflow.python.framework.ops import disable_eager_execution
 
+import herring.tensorflow as herring
+herring.init()
 from mask_rcnn.utils.logging_formatter import logging
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed
 
 from mask_rcnn import dataloader
-from mask_rcnn import distributed_executer
-from mask_rcnn import mask_rcnn_model as mask_rcnn_model_v1
+#from mask_rcnn import distributed_executer
+#from mask_rcnn import mask_rcnn_model as mask_rcnn_model_v1
 from mask_rcnn.tf2 import mask_rcnn_model as mask_rcnn_model_v2
-from mask_rcnn import session_executor
+#from mask_rcnn import session_executor
 from mask_rcnn import tape_executor
 
 from mask_rcnn.hyperparameters import mask_rcnn_params
@@ -52,6 +54,12 @@ import dllogger
 
 FLAGS = define_hparams_flags()
 
+
+gpus = tf.config.list_physical_devices('GPU')
+#for gpu in gpus:
+#    tf.config.experimental.set_memory_growth(gpu, True)
+if gpus:
+    tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
 
 def run_executer(runtime_config, train_input_fn=None, eval_input_fn=None):
     """Runs Mask RCNN model on distribution strategy defined by the user."""

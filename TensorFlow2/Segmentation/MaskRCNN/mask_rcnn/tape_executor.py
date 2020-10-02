@@ -15,13 +15,22 @@ from mask_rcnn.tf2.mask_rcnn_model import TapeModel
 
 import tensorflow as tf
 
-if MPI_is_distributed:
-    import horovod.tensorflow as hvd
-    hvd.init()
-    
-devices = tf.config.list_physical_devices('GPU')
-tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
-logical_devices = tf.config.list_logical_devices('GPU')
+#if MPI_is_distributed:
+#    import horovod.tensorflow as hvd
+#    hvd.init()
+ 
+import herring.tensorflow as herring
+#herring.init()
+
+#gpus = tf.config.experimental.list_physical_devices('GPU')
+#for gpu in gpus:
+#    tf.config.experimental.set_memory_growth(gpu, True)
+#if gpus:
+#    tf.config.experimental.set_visible_devices(gpus[herring.local_rank()], 'GPU')
+
+#devices = tf.config.list_physical_devices('GPU')
+#tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
+#logical_devices = tf.config.list_logical_devices('GPU')
 
 def train_and_eval(run_config, train_input_fn, eval_input_fn):
     tf.config.optimizer.set_experimental_options({"auto_mixed_precision": run_config.amp})
