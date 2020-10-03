@@ -901,7 +901,7 @@ class TapeModel(object):
             if self.params.amp:
                 scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
         if MPI_is_distributed():
-            tape = herring.DistributedGradientTape(tape, compression=herring.Compression.fp16)
+            tape = herring.DistributedGradientTape(tape)
         if self.params.amp:
             scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
             gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
@@ -924,6 +924,7 @@ class TapeModel(object):
         self.load_weights()
     
     def train_epoch(self, steps, broadcast=False):
+        
         if MPI_rank()==0:
             logging.info("Starting training loop")
             p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
@@ -944,14 +945,15 @@ class TapeModel(object):
             features, labels = next(self.train_tdf)
             loss_dict = self.train_step(features, labels, b_w, b_o)
             delta_t = time.perf_counter() - tstart
-            timings.append(delta_t)
+            if i>2:
+                timings.append(delta_t)
             if MPI_rank()==0:
                 loss_history.append(loss_dict['total_loss'].numpy())
                 step = self.optimizer.iterations
                 learning_rate = self.schedule(step)
                 p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
                                                                           learning_rate))
-            if i%500 == 0:
+            if i%4000 == 0:
                 timings = np.asarray(timings, np.float)
                 print(f"average step time={np.mean(timings)} +/- {np.std(timings)}")
                 timings = []

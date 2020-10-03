@@ -22,11 +22,11 @@ import tensorflow as tf
 import herring.tensorflow as herring
 #herring.init()
 
-#gpus = tf.config.experimental.list_physical_devices('GPU')
+gpus = tf.config.list_physical_devices('GPU')
 #for gpu in gpus:
 #    tf.config.experimental.set_memory_growth(gpu, True)
-#if gpus:
-#    tf.config.experimental.set_visible_devices(gpus[herring.local_rank()], 'GPU')
+if gpus:
+    tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
 
 #devices = tf.config.list_physical_devices('GPU')
 #tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
