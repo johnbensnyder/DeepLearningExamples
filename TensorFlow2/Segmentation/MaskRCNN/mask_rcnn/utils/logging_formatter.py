@@ -191,10 +191,10 @@ class _Logger(object):
         self.old_warnings_showwarning = None
         
         if is_herring():
-            if MPI_rank_and_size(True)[0] == 0:
+            if MPI_rank_and_size()[0] == 0:
                 self._define_logger()
         else:
-            if MPI_rank_and_size(False)[0] == 0:
+            if MPI_rank_and_size()[0] == 0:
                 self._define_logger()
 
     def _define_logger(self):

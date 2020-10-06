@@ -36,7 +36,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../results_tape_1x
 mkdir -p $BASEDIR/../results_tape_1x
 
-herringrun -n 32 --homogeneous -c /shared/rejin/conda \
+/shared/rejin/conda/bin/herringrun -n 32 --homogeneous -c /shared/rejin/conda \
     RUN_HERRING=1 /shared/rejin/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
         --checkpoint="/shared/rejin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
@@ -51,7 +51,7 @@ herringrun -n 32 --homogeneous -c /shared/rejin/conda \
         --num_steps_per_eval=$STEP_PER_EPOCH \
         --warmup_learning_rate=0.000133 \
         --warmup_steps=1800 \
-	--first_eval=0 \
+	--first_eval=20 \
         --global_gradient_clip_ratio=0.0 \
         --total_steps=8500 \
         --l2_weight_decay=1e-4 \
