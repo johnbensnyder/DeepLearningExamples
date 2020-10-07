@@ -37,6 +37,7 @@ mkdir -p $BASEDIR/../baseline_1x
     --oversubscribe \
     /home/ubuntu/anaconda3/envs/mask_rcnn/bin/python ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
+	--loop_mode="tape" \
         --checkpoint="/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
         --log_interval=100 \
@@ -54,9 +55,9 @@ mkdir -p $BASEDIR/../baseline_1x
         --train_batch_size=$BATCH_SIZE \
         --eval_batch_size=1 \
         --dist_eval \
-        --training_file_pattern="/home/ubuntu/data/nv_coco/train*.tfrecord" \
-        --validation_file_pattern="/home/ubuntu/data/nv_coco/val*.tfrecord" \
-        --val_json_file="/home/ubuntu/data/annotations/instances_val2017.json" \
+        --training_file_pattern="/shared/data2/train*.tfrecord" \
+        --validation_file_pattern="/shared/data2/val*.tfrecord" \
+        --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \
