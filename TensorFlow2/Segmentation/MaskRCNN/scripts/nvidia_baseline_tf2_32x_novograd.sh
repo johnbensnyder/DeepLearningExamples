@@ -15,11 +15,17 @@
 
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+<<<<<<< Updated upstream:TensorFlow2/Segmentation/MaskRCNN/scripts/nvidia_baseline_tf2_32x_novograd.sh
 rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 /shared/rejin/conda/bin/herringrun -n 32 --homogeneous -c /shared/rejin/conda \
     RUN_HERRING=1 \
     /shared/rejin/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
+=======
+rm -rf $BASEDIR/../results_tape_1x
+mkdir -p $BASEDIR/../results_tape_1x
+/shared/rejin/conda/bin/herringrun -n 64 --homogeneous -c /shared/rejin/conda/ /shared/rejin/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
+>>>>>>> Stashed changes:TensorFlow2/Segmentation/MaskRCNN/scripts/tape_8x_herring.sh
         --mode="train_and_eval" \
 	--loop_mode="tape" \
         --checkpoint="/shared/rejin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
@@ -39,9 +45,14 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --train_batch_size=1 \
         --eval_batch_size=1 \
         --dist_eval \
+<<<<<<< Updated upstream:TensorFlow2/Segmentation/MaskRCNN/scripts/nvidia_baseline_tf2_32x_novograd.sh
 	--first_eval=15 \
         --training_file_pattern="/shared/rejin/data/nv_tfrecords/train*.tfrecord" \
         --validation_file_pattern="/shared/rejin/data/nv_tfrecords/val*.tfrecord" \
+=======
+        --training_file_pattern="/shared/data2/train*.tfrecord" \
+        --validation_file_pattern="/shared/data2/val*.tfrecord" \
+>>>>>>> Stashed changes:TensorFlow2/Segmentation/MaskRCNN/scripts/tape_8x_herring.sh
         --val_json_file="/shared/rejin/data/nv_tfrecords/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
