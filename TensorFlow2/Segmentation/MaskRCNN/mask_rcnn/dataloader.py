@@ -138,7 +138,7 @@ class InputReader(object):
                     num_shards=_num_shards,
                     index=_shard_idx
                 )
-                dataset = dataset.shuffle(math.ceil(256 / _num_shards))
+                dataset = dataset.shuffle(math.ceil(256 / _num_shards), seed=self._seed)
 
             except NameError:  # Not a distributed training setup
                 pass
@@ -165,6 +165,7 @@ class InputReader(object):
             cycle_length=32,
             block_length=64,
             num_parallel_calls=tf.data.experimental.AUTOTUNE,
+            deterministic=True,
         )
 
         if self._num_examples is not None and self._num_examples > 0:
@@ -175,8 +176,8 @@ class InputReader(object):
         if self._mode == tf.estimator.ModeKeys.TRAIN:
             dataset = dataset.shuffle(
                 buffer_size=4096,
-                reshuffle_each_iteration=True,
-                seed=seed
+                reshuffle_each_iteration=False,
+                seed=self._seed
             )
 
             dataset = dataset.repeat()

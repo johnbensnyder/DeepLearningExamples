@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-BATCH_SIZE=4
+BATCH_SIZE=1
 HOST_COUNT=1
 GPU_COUNT=`nvidia-smi --query-gpu=name --format=csv,noheader | wc -l`
 IMAGES=118287
