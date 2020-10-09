@@ -585,7 +585,7 @@ class TapeModel(object):
             #gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
         #gradients = [(i+j)/2 for i,j in zip(gradients_0, gradients_1)]
         self.optimizer_0.apply_gradients(zip(gradients_0, gpu_0_vars))
-        self.optimizer_1.apply_gradients(zip(gradients_1s, gpu_1_vars))
+        self.optimizer_1.apply_gradients(zip(gradients_1, gpu_1_vars))
         if MPI_is_distributed() and sync_weights:
             if MPI_rank()==0:
                 logging.info("Broadcasting variables")

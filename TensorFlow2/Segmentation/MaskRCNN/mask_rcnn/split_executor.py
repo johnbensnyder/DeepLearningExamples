@@ -50,7 +50,7 @@ os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 os.environ['TF_AUTOTUNE_THRESHOLD'] = '2'
 
 tf.config.optimizer.set_experimental_options({"auto_mixed_precision": params.amp})
-tf.config.optimizer.set_jit(params.xla)
+#tf.config.optimizer.set_jit(params.xla)
 tf.config.experimental.set_synchronous_execution(False)
 
 train_input_fn = dataloader.InputReader(
