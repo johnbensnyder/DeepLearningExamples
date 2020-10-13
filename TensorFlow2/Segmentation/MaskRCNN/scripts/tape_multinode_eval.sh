@@ -29,19 +29,18 @@ LR_MULTIPLIER=0.001
 BASE_LR=$(echo $GLOBAL_BATCH_SIZE*$LR_MULTIPLIER | bc)
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-rm -rf $BASEDIR/../results_tape_1x
-mkdir -p $BASEDIR/../results_tape_1x
 /opt/amazon/openmpi/bin/mpirun --allow-run-as-root --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/hostfile \
+    --hostfile /shared/eval_hostfile \
     -N 8 \
     -x NCCL_DEBUG=VERSION \
     -x LD_LIBRARY_PATH \
     -x PATH \
     -x RDMAV_FORK_SAFE=1 \
+    --bind-to none \
     --oversubscribe \
     bash launcher.sh \
-    /shared/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
+    /shared/conda/bin/python ${BASEDIR}/../mask_rcnn_eval.py \
         --mode="train_and_eval" \
         --checkpoint="/shared/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
@@ -52,7 +51,7 @@ mkdir -p $BASEDIR/../results_tape_1x
         --optimizer_type="SGD" \
         --lr_schedule="piecewise" \
         --model_dir="$BASEDIR/../results_tape_1x" \
-        --num_steps_per_eval=100 \
+        --num_steps_per_eval=$STEP_PER_EPOCH \
         --warmup_learning_rate=0.000133 \
         --warmup_steps=1500 \
         --global_gradient_clip_ratio=5.0 \
@@ -61,7 +60,7 @@ mkdir -p $BASEDIR/../results_tape_1x
         --train_batch_size=$BATCH_SIZE \
         --eval_batch_size=1 \
         --dist_eval \
-	--training_file_pattern="/shared/data/nv_tfrecords/train*.tfrecord" \
+        --training_file_pattern="/shared/data/nv_tfrecords/train*.tfrecord" \
         --validation_file_pattern="/shared/data/nv_tfrecords/val*.tfrecord" \
         --val_json_file="/shared/data/nv_tfrecords/annotations/instances_val2017.json" \
         --amp \

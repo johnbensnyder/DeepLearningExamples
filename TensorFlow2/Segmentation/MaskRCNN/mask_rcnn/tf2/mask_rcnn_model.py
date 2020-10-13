@@ -22,7 +22,7 @@ model architecture, loss function, learning rate schedule, and evaluation
 procedure.
 
 """
-
+import time
 import itertools
 import copy
 import numpy as np
@@ -32,7 +32,9 @@ import threading
 from math import ceil
 from mpi4py import MPI
 from tqdm import tqdm
+import os
 
+import h5py
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.core.protobuf import rewriter_config_pb2
@@ -43,7 +45,7 @@ from mask_rcnn.models import heads
 from mask_rcnn.tf2.models import heads as tf2_heads
 from mask_rcnn.models import resnet
 
-from mask_rcnn.training import losses, learning_rates
+from mask_rcnn.training import losses, learning_rates, optimizers
 
 from mask_rcnn.ops import postprocess_ops
 from mask_rcnn.ops import roi_ops
@@ -64,8 +66,13 @@ from mask_rcnn.tf2.utils import warmup_scheduler, eager_mapping
 
 from mask_rcnn.utils.meters import StandardMeter
 from mask_rcnn.utils.metric_tracking import register_metric
+from mask_rcnn.utils.herring_env import is_herring
 
-hvd = LazyImport("horovod.tensorflow")
+
+if is_herring():
+    import herring.tensorflow as herring
+else:
+    hvd = LazyImport("horovod.tensorflow")
 
 MODELS = dict()
 
@@ -337,12 +344,13 @@ class MRCNN(tf.keras.Model):
                                   'box_outputs': box_outputs,
                                   'anchor_boxes': rpn_box_rois})
         else:  # is training
-            encoded_box_targets = training_ops.encode_box_targets(
-                boxes=rpn_box_rois,
-                gt_boxes=box_targets,
-                gt_labels=class_targets,
-                bbox_reg_weights=params['bbox_reg_weights']
-            )
+            if params['box_loss_type'] != "giou":
+                encoded_box_targets = training_ops.encode_box_targets(
+                    boxes=rpn_box_rois,
+                    gt_boxes=box_targets,
+                    gt_labels=class_targets,
+                    bbox_reg_weights=params['bbox_reg_weights']
+                )
 
             model_outputs.update({
                 'rpn_score_outputs': rpn_score_outputs,
@@ -350,7 +358,7 @@ class MRCNN(tf.keras.Model):
                 'class_outputs': class_outputs,
                 'box_outputs': box_outputs,
                 'class_targets': class_targets,
-                'box_targets': encoded_box_targets,
+                'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
                 'box_rois': rpn_box_rois,
             })
         # Faster-RCNN mode.
@@ -497,6 +505,8 @@ def _model_fn(features, labels, mode, params):
         box_outputs=model_outputs['box_outputs'],
         class_targets=model_outputs['class_targets'],
         box_targets=model_outputs['box_targets'],
+        rpn_box_rois=model_outputs['box_rois'],
+        image_info=features['image_info'],
         params=params
     )
 
@@ -557,7 +567,7 @@ def _model_fn(features, labels, mode, params):
                 warmup_learning_rate=params['warmup_learning_rate'],
                 warmup_steps=params['warmup_steps'],
                 first_decay_steps=params['total_steps'],
-                alpha= 0.001 #* params['init_learning_rate']
+                alpha= 0.001
             )
         else:
             raise NotImplementedError
@@ -669,6 +679,8 @@ class SessionModel(object):
             box_outputs=model_outputs['box_outputs'],
             class_targets=model_outputs['class_targets'],
             box_targets=model_outputs['box_targets'],
+            rpn_box_rois=model_outputs['box_rois'],
+            image_info=features['image_info'],
             params=self.run_config.values()
         )
         if self.run_config.include_mask:
@@ -723,9 +735,9 @@ class SessionModel(object):
             raise NotImplementedError
 
         grads_and_vars = optimizer.compute_gradients(total_loss, trainable_variables, colocate_gradients_with_ops=True)
-        
+ 
         gradients, variables = zip(*grads_and_vars)
-        
+ 
         global_gradient_clip_ratio = self.run_config.global_gradient_clip_ratio
         if global_gradient_clip_ratio > 0.0:
             all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
@@ -775,7 +787,7 @@ class SessionModel(object):
             register_metric(name="Learning rate", tensor=learning_rate, aggregator=StandardMeter())
             pass
         return output_dict
-    
+ 
     def eval_fn(self):
         #with tf.xla.experimental.jit_scope(compile_ops=False):
         features = self.eval_tdf.get_next()['features']
@@ -822,7 +834,10 @@ class TapeModel(object):
     
     def __init__(self, params, train_input_fn=None, eval_input_fn=None, is_training=True):
         self.params = params
+
+
         self.forward = MRCNN(self.params.values(), is_training=is_training)
+        self.model_dir = self.params.model_dir
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
@@ -830,7 +845,8 @@ class TapeModel(object):
         self.eval_tdf = iter(eval_input_fn(eval_params).repeat()) \
                             if eval_input_fn else None
         self.optimizer, self.schedule = self.get_optimizer()
-    
+        self.epoch_num = 0
+
     def load_weights(self):
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)
         weights = [chkp.get_tensor(i) for i in eager_mapping.resnet_vars]
@@ -841,6 +857,10 @@ class TapeModel(object):
             schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(self.params.learning_rate_steps,
                                                                             [self.params.init_learning_rate] + \
                                                                             self.params.learning_rate_levels)
+        elif self.params.lr_schedule=='cosine':
+            schedule = tf.keras.experimental.CosineDecay(self.params.init_learning_rate,
+                                                         self.params.total_steps,
+                                                         alpha=0.001)
         else:
             raise NotImplementedError
         schedule = warmup_scheduler.WarmupScheduler(schedule, self.params.warmup_learning_rate,
@@ -851,13 +871,18 @@ class TapeModel(object):
         elif self.params.optimizer_type=="LAMB":
             opt = tfa.optimizers.LAMB(learning_rate=schedule)
         elif self.params.optimizer_type=="Novograd":
-            opt = tfa.optimizers.NovoGrad(learning_rate=schedule)
+            opt = optimizers.NovoGrad(learning_rate=schedule,
+                                          beta_1=self.params.beta1,
+                                          beta_2=self.params.beta2,
+                                          weight_decay=self.params.l2_weight_decay,
+                                          exclude_from_weight_decay=['bias', 'beta', 'batch_normalization'])
         else:
             raise NotImplementedError
         if self.params.amp:
             opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, 'dynamic')
         return opt, schedule
-    
+
+
     @tf.function
     def train_step(self, features, labels, sync_weights=False, sync_opt=False):
         loss_dict = dict()
@@ -865,19 +890,21 @@ class TapeModel(object):
             model_outputs = self.forward(features, labels, self.params.values(), True)
             loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
                 loss_dict['rpn_box_loss'] = losses.rpn_loss(
-                score_outputs=model_outputs['rpn_score_outputs'],
-                box_outputs=model_outputs['rpn_box_outputs'],
-                labels=labels,
-                params=self.params.values()
-            )
+                    score_outputs=model_outputs['rpn_score_outputs'],
+                    box_outputs=model_outputs['rpn_box_outputs'],
+                    labels=labels,
+                    params=self.params.values()
+                )
             loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
                 loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
-                class_outputs=model_outputs['class_outputs'],
-                box_outputs=model_outputs['box_outputs'],
-                class_targets=model_outputs['class_targets'],
-                box_targets=model_outputs['box_targets'],
-                params=self.params.values()
-            )
+                    class_outputs=model_outputs['class_outputs'],
+                    box_outputs=model_outputs['box_outputs'],
+                    class_targets=model_outputs['class_targets'],
+                    box_targets=model_outputs['box_targets'],
+                    rpn_box_rois=model_outputs['box_rois'],
+                    image_info=features['image_info'],
+                    params=self.params.values()
+                )
             if self.params.include_mask:
                 loss_dict['mask_loss'] = losses.mask_rcnn_loss(
                     mask_outputs=model_outputs['mask_outputs'],
@@ -900,22 +927,74 @@ class TapeModel(object):
                 + loss_dict['l2_regularization_loss']
             if self.params.amp:
                 scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
-        if MPI_is_distributed():
-            tape = hvd.DistributedGradientTape(tape, compression=hvd.compression.NoneCompressor)
-        if self.params.amp:
-            scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
-            gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+
+        if is_herring():
+            if MPI_is_distributed(True):
+                tape = herring.DistributedGradientTape(tape)
+            if self.params.amp:
+                scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
+                gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+            else:
+                gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
+            global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
+            if global_gradient_clip_ratio > 0.0:
+                all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
+                (clipped_grads, _) = tf.clip_by_global_norm(gradients, clip_norm=global_gradient_clip_ratio,
+                                use_norm=tf.cond(all_are_finite, lambda: tf.linalg.global_norm(gradients), lambda: tf.constant(1.0)))
+                gradients = clipped_grads
+        
+            grads_and_vars = []
+            # Special treatment for biases (beta is named as bias in reference model)
+            # Reference: https://github.com/ddkang/Detectron/blob/80f3295308/lib/modeling/optimizer.py#L109
+            for grad, var in zip(gradients, self.forward.trainable_variables):
+                if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
+                    grad = 2.0 * grad
+                grads_and_vars.append((grad, var))
+
+            # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
+            self.optimizer.apply_gradients(grads_and_vars)
+            if MPI_is_distributed(True) and sync_weights:
+                if MPI_rank(True)==0:
+                    logging.info("Broadcasting variables")
+                herring.broadcast_variables(self.forward.variables, 0)
+            if MPI_is_distributed(True) and sync_opt:
+                if MPI_rank(True)==0:
+                    logging.info("Broadcasting optimizer")
+                herring.broadcast_variables(self.optimizer.variables(), 0)        
         else:
-            gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
-        if MPI_is_distributed() and sync_weights:
-            if MPI_rank()==0:
-                logging.info("Broadcasting variables")
-            hvd.broadcast_variables(self.forward.variables, 0)
-        if MPI_is_distributed() and sync_opt:
-            if MPI_rank()==0:
-                logging.info("Broadcasting optimizer")
-            hvd.broadcast_variables(self.optimizer.variables(), 0)
+            if MPI_is_distributed():
+                tape = hvd.DistributedGradientTape(tape, compression=hvd.compression.NoneCompressor)
+            if self.params.amp:
+                scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
+                gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+            else:
+                gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
+            global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
+            if global_gradient_clip_ratio > 0.0:
+                all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
+                (clipped_grads, _) = tf.clip_by_global_norm(gradients, clip_norm=global_gradient_clip_ratio,
+                                use_norm=tf.cond(all_are_finite, lambda: tf.linalg.global_norm(gradients), lambda: tf.constant(1.0)))
+                gradients = clipped_grads
+        
+            grads_and_vars = []
+            # Special treatment for biases (beta is named as bias in reference model)
+            # Reference: https://github.com/ddkang/Detectron/blob/80f3295308/lib/modeling/optimizer.py#L109
+            for grad, var in zip(gradients, self.forward.trainable_variables):
+                if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
+                    grad = 2.0 * grad
+                grads_and_vars.append((grad, var))
+
+            # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
+            self.optimizer.apply_gradients(grads_and_vars)
+
+            if MPI_is_distributed() and sync_weights:
+                if MPI_rank()==0:
+                    logging.info("Broadcasting variables")
+                hvd.broadcast_variables(self.forward.variables, 0)
+            if MPI_is_distributed() and sync_opt:
+                if MPI_rank()==0:
+                    logging.info("Broadcasting optimizer")
+                hvd.broadcast_variables(self.optimizer.variables(), 0)
         return loss_dict
     
     def initialize_model(self):
@@ -924,12 +1003,14 @@ class TapeModel(object):
         self.load_weights()
     
     def train_epoch(self, steps, broadcast=False):
-        if MPI_rank()==0:
+        if MPI_rank(is_herring())==0:
             logging.info("Starting training loop")
             p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
             loss_history = []
         else:
             p_bar = range(steps)
+
+        timings=[]
         for i in p_bar:
             if broadcast and i==0:
                 b_w, b_o = True, True
@@ -937,14 +1018,50 @@ class TapeModel(object):
                 b_w, b_o = False, True
             else:
                 b_w, b_o = False, False
+            
+            tstart = time.perf_counter()
             features, labels = next(self.train_tdf)
             loss_dict = self.train_step(features, labels, b_w, b_o)
-            if MPI_rank()==0:
+
+            delta_t = time.perf_counter() - tstart
+            timings.append(delta_t)
+            if MPI_rank(is_herring())==0:
                 loss_history.append(loss_dict['total_loss'].numpy())
                 step = self.optimizer.iterations
                 learning_rate = self.schedule(step)
                 p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
                                                                           learning_rate))
+            #if i%500 == 0:
+            #    timings = np.asarray(timings, np.float)
+            #    print(f"average step time={np.mean(timings)} +/- {np.std(timings)}")
+            #    timings = []
+        if MPI_rank(is_herring()) == 0:
+            print("Saving checkpoint...")
+            self.epoch_num+=1
+            self.save_model()
+            
+    def get_latest_checkpoint(self):
+        try:
+            return sorted([_ for _ in os.listdir(self.model_dir) if _.endswith(".h5")])[-1]
+        except:
+            return None
+
+    def save_model(self):
+        filename = os.path.join(self.model_dir, f'weights_{self.epoch_num:02d}.h5')
+        f = h5py.File(filename,'w')
+        weights = self.forward.get_weights()
+        for i in range(len(weights)):
+            f.create_dataset('weight'+str(i),data=weights[i])
+        f.close()
+
+    def load_model(self, filename):
+        file=h5py.File(filename,'r')
+        weights = []
+        for i in range(len(file.keys())):
+            weights.append(file['weight'+str(i)][:])
+        self.forward.set_weights(weights)
+    
+
     @tf.function            
     def predict(self, features):
         labels = None
@@ -956,7 +1073,7 @@ class TapeModel(object):
         return model_outputs
             
     def run_eval(self, steps, async_eval=False, use_ext=False):
-        if MPI_rank()==0:
+        if MPI_rank(is_herring())==0:
             logging.info("Starting eval loop")
             p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
         else:
@@ -975,7 +1092,7 @@ class TapeModel(object):
         _preds = copy.deepcopy(worker_predictions)
         for k, v in _preds.items():
             _preds[k] = np.concatenate(v, axis=0)
-        if MPI_rank() < 32:
+        if MPI_rank(is_herring()) < 32:
             converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
             worker_source_ids = _preds['source_id']
         else:
@@ -985,7 +1102,7 @@ class TapeModel(object):
         predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
         source_ids_list = evaluation.gather_result_from_all_processes(worker_source_ids)
         validation_json_file=self.params.val_json_file
-        if MPI_rank() == 0:
+        if MPI_rank(is_herring()) == 0:
             all_predictions = []
             source_ids = []
             for i, p in enumerate(predictions_list):
