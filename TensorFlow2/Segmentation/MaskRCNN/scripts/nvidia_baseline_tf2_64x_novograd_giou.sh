@@ -35,8 +35,9 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 	--beta1=0.9 \
 	--beta2=0.25 \
 	--warmup_steps=1000 \
-        --total_steps=5082 \
+        --total_steps=4158 \
         --l2_weight_decay=1.25e-3 \
+	--label_smoothing=0.1 \
         --train_batch_size=1 \
         --eval_batch_size=1 \
         --dist_eval \
