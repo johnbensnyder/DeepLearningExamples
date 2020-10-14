@@ -17,8 +17,8 @@ conda_path=/shared/sami/conda
 source $conda_path/etc/profile.d/conda.sh
 conda activate base
 
-#DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
-DIRECT_LAUNCH=1
+DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
+#DIRECT_LAUNCH=1
 PROFILE_PATH="--profile_path ${BASEDIR}/../Profiles/TapeSingleHost"
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -26,7 +26,7 @@ rm -rf $BASEDIR/../results_tf2_32x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_32x_novo_$1
 /opt/amazon/openmpi/bin/mpirun  --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/mzanur/hosts_1x \
+    --hostfile /shared/rejin/hosts_8x \
     -N 8 \
     -x NCCL_DEBUG=VERSION \
     -x LD_LIBRARY_PATH \
@@ -55,9 +55,9 @@ mkdir -p $BASEDIR/../results_tf2_32x_novo_$1
         --eval_batch_size=1 \
         --dist_eval \
 	--first_eval=15 \
-        --training_file_pattern="/home/ubuntu/data2/train*.tfrecord" \
-        --validation_file_pattern="/home/ubuntu/data2/val*.tfrecord" \
-        --val_json_file="/home/ubuntu/data2/annotations/instances_val2017.json" \
+        --training_file_pattern="/shared/data2/train*.tfrecord" \
+        --validation_file_pattern="/shared/data2/val*.tfrecord" \
+        --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \

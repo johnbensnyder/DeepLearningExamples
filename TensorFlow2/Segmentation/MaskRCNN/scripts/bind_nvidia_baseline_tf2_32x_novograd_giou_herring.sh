@@ -20,8 +20,9 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 
 DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
 
-/shared/sami/conda/bin/herringrun -n 32 --homogeneous -c /shared/sami/conda \
-    RUN_HERRING=1 /shared/sami/conda/bin/python ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=8 --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+
+/shared/sami/conda/bin/herringrun_profile -n 32 --homogeneous -c /shared/sami/conda \
+RUN_HERRING=1 /shared/sami/conda/bin/python ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=8 --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
@@ -32,20 +33,20 @@ DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_32x_novo_$1" \
-        --num_steps_per_eval=231 \
+        --num_steps_per_eval=500 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.5 \
 	--warmup_steps=300 \
-        --total_steps=7500 \
+        --total_steps=300 \
         --l2_weight_decay=1e-3 \
         --train_batch_size=1 \
         --eval_batch_size=1 \
         --dist_eval \
 	--first_eval=15 \
-        --training_file_pattern="/shared/data2/train*.tfrecord" \
-        --validation_file_pattern="/shared/data2/val*.tfrecord" \
-        --val_json_file="/shared/data2/annotations/instances_val2017.json" \
+        --training_file_pattern="/home/ubuntu/data2/train*.tfrecord" \
+        --validation_file_pattern="/home/ubuntu/data2/val*.tfrecord" \
+        --val_json_file="/home/ubuntu/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \

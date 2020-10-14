@@ -36,15 +36,8 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../baseline_1x_tape
 mkdir -p $BASEDIR/../baseline_1x_tape
 
-/opt/amazon/openmpi/bin/mpirun --tag-output --mca plm_rsh_no_tree_spawn 1 \
-    --mca btl_tcp_if_exclude lo,docker0 \
-    -np ${NUM_GPUS} -H localhost:${NUM_GPUS} \
-    -x NCCL_DEBUG=VERSION \
-    -x LD_LIBRARY_PATH \
-    -x PATH \
-    --oversubscribe \
-    --bind-to none \
-    /shared/sami/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    
+/shared/sami/conda/bin/herringrun_profile --singlenode -c /shared/sami/conda /shared/sami/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train" \
         --eval_after_training=0\
         --loop_mode="tape" \

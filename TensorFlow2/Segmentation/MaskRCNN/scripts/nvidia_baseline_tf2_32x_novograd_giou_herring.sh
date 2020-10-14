@@ -20,7 +20,7 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 
 DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
 
-/shared/sami/conda/bin/herringrun_profile -n 8 --homogeneous -c /shared/sami/conda \
+/shared/sami/conda/bin/herringrun_profile -n 32 --homogeneous -c /shared/sami/conda \
 	RUN_HERRING=1 \
 	/shared/sami/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
@@ -37,8 +37,8 @@ DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.5 \
-	--warmup_steps=300 \
-        --total_steps=300 \
+	--warmup_steps=1000 \
+        --total_steps=2000 \
         --l2_weight_decay=1e-3 \
         --train_batch_size=1 \
         --eval_batch_size=1 \
