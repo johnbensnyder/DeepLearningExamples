@@ -18,10 +18,10 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 
-DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
+#DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
 
-
-/shared/sami/conda/bin/herringrun_profile -n 32 --homogeneous -c /shared/sami/conda \
+DIRECT_LAUNCH=1
+/shared/sami/conda/bin/herringrun_profile -n 8 --homogeneous -c /shared/sami/conda \
 RUN_HERRING=1 /shared/sami/conda/bin/python ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=8 --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
@@ -33,12 +33,12 @@ RUN_HERRING=1 /shared/sami/conda/bin/python ${BASEDIR}/bind_launch.py  --direct_
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_32x_novo_$1" \
-        --num_steps_per_eval=500 \
+        --num_steps_per_eval=6000 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.5 \
 	--warmup_steps=300 \
-        --total_steps=300 \
+        --total_steps=2000 \
         --l2_weight_decay=1e-3 \
         --train_batch_size=1 \
         --eval_batch_size=1 \

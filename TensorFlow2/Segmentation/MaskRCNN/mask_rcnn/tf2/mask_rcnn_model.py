@@ -1073,7 +1073,7 @@ class TapeModel(object):
                     p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
                                                                             learning_rate))
 
-        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[1:])*1000.} +/- {np.std(times[1:])*1000.} ms")            
+        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")            
 
     def get_latest_checkpoint(self):
         try:

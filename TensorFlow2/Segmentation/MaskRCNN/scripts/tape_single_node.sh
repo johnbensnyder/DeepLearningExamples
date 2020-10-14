@@ -26,8 +26,8 @@ TOTAL_STEPS=${TOTAL_STEPS:-$(( 13 * STEP_PER_EPOCH ))}
 DATA_PATH=${DATA_PATH:-"/data/coco/coco-2017"}
 LR_MULTIPLIER=0.001
 BASE_LR=$(echo $GLOBAL_BATCH_SIZE*$LR_MULTIPLIER | bc)
-DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
-
+#DIRECT_LAUNCH=${DIRECT_LAUNCH:-"0"}
+DIRECT_LAUNCH=1
 #source activate mask_rcnn
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -44,7 +44,7 @@ mkdir -p $BASEDIR/../baseline_1x_tape
     -x PATH \
     --oversubscribe \
     --bind-to none \
-    /shared/sami/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    /shared/rejin/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train" \
         --eval_after_training=0\
         --loop_mode="tape" \
@@ -57,11 +57,11 @@ mkdir -p $BASEDIR/../baseline_1x_tape
         --optimizer_type="SGD" \
         --lr_schedule="piecewise" \
         --model_dir="$BASEDIR/../baseline_1x_tape" \
-        --num_steps_per_eval=$STEP_PER_EPOCH \
+        --num_steps_per_eval=3000 \
         --warmup_learning_rate=0.000133 \
         --warmup_steps=100 \
         --global_gradient_clip_ratio=0.0 \
-        --total_steps=300 \
+        --total_steps=2000 \
         --l2_weight_decay=1e-4 \
         --train_batch_size=$BATCH_SIZE \
         --eval_batch_size=1 \

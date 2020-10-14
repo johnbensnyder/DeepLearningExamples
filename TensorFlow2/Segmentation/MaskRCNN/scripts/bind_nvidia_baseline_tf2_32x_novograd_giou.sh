@@ -26,7 +26,7 @@ rm -rf $BASEDIR/../results_tf2_32x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_32x_novo_$1
 /opt/amazon/openmpi/bin/mpirun  --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/rejin/hosts_8x \
+    --hostfile /shared/rejin/hosts_32x \
     -N 8 \
     -x NCCL_DEBUG=VERSION \
     -x LD_LIBRARY_PATH \

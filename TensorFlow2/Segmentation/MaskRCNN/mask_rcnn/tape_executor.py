@@ -2,12 +2,12 @@ import os
 import sys
 from math import ceil
 import time
-os.environ['CUDA_CACHE_DISABLE'] = '0'
-os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
-os.environ['TF_ADJUST_HUE_FUSED'] = '1'
-os.environ['TF_ADJUST_SATURATION_FUSED'] = '1'
-os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
-os.environ['TF_AUTOTUNE_THRESHOLD'] = '2'
+#os.environ['CUDA_CACHE_DISABLE'] = '0'
+#os.environ['TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT'] = '1'
+#os.environ['TF_ADJUST_HUE_FUSED'] = '1'
+#os.environ['TF_ADJUST_SATURATION_FUSED'] = '1'
+#os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
+#os.environ['TF_AUTOTUNE_THRESHOLD'] = '2'
 
 from mask_rcnn.utils.logging_formatter import logging
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
@@ -26,9 +26,9 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
         #    tf.config.experimental.set_memory_growth(gpu, True)
         print("#"*20, len(gpus))
         
-        if gpus:
-            #tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
-            tf.config.set_visible_devices(gpus[0], 'GPU')
+        #if gpus:
+        #    tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
+            #tf.config.set_visible_devices(gpus[0], 'GPU')
     else:
         if MPI_is_distributed(False):
             import horovod.tensorflow as hvd
@@ -36,8 +36,8 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
             
         devices = tf.config.list_physical_devices('GPU')
         print("#"*20, len(devices))
-       # tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
-       # logical_devices = tf.config.list_logical_devices('GPU')
+        tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
+        logical_devices = tf.config.list_logical_devices('GPU')
 
     tf.config.optimizer.set_experimental_options({"auto_mixed_precision": run_config.amp})
     tf.config.optimizer.set_jit(run_config.xla)
