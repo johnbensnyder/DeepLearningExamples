@@ -17,7 +17,7 @@
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
-/shared/rejin/conda/bin/herringrun -n 64 --homogeneous -c /shared/rejin/conda \
+/shared/rejin/conda/bin/herringrun -n 64 -c /shared/rejin/conda \
     RUN_HERRING=1 \
     /shared/rejin/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
@@ -41,10 +41,10 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --train_batch_size=1 \
         --eval_batch_size=1 \
         --dist_eval \
-	--first_eval=15 \
-        --training_file_pattern="/shared/data2/train*.tfrecord" \
-        --validation_file_pattern="/shared/data2/val*.tfrecord" \
-        --val_json_file="/shared/data2/annotations/instances_val2017.json" \
+	--first_eval=20 \
+        --training_file_pattern="/home/ubuntu/data2/train*.tfrecord" \
+        --validation_file_pattern="/home/ubuntu/data2/val*.tfrecord" \
+        --val_json_file="/home/ubuntu/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \
