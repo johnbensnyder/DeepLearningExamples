@@ -1114,15 +1114,30 @@ class TapeModel(object):
         else:
             p_bar = range(steps)
         worker_predictions = dict()
+        data_load_total = 0
+        predict_total = 0
+        process_total = 0
+        append_total = 0
+        start_total_infer = time.time()        
         for i in p_bar:
+            start = time.time()
             features = next(self.eval_tdf)['features']
+            data_load_time = time.time()
+            data_load_total += data_load_time-start
             out = self.predict(features)
+            predict_time = time.time()
+            predict_total += predict_time - data_load_time
             out = evaluation.process_prediction_for_eval(out)
+            process_time = time.time()
+            process_total += process_time - predict_time
             for k, v in out.items():
                 if k not in worker_predictions:
                     worker_predictions[k] = [v]
                 else:
                     worker_predictions[k].append(v)
+            append_time = time.time()
+            append_total += append_time-process_time
+        end_total_infer = time.time()
         coco = coco_metric.MaskCOCO()
         _preds = copy.deepcopy(worker_predictions)
         for k, v in _preds.items():
@@ -1133,10 +1148,12 @@ class TapeModel(object):
         else:
             converted_predictions = []
             worker_source_ids = []
+        end_coco_load = time.time()            
         MPI.COMM_WORLD.barrier()
         predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
         source_ids_list = evaluation.gather_result_from_all_processes(worker_source_ids)
         validation_json_file=self.params.val_json_file
+        end_gather_result = time.time()
         if MPI_rank(is_herring()) == 0:
             all_predictions = []
             source_ids = []
@@ -1162,3 +1179,6 @@ class TapeModel(object):
                     eval_thread.start()
                 else:
                     evaluation.compute_coco_eval_metric_n(*args)
+        end_coco_eval = time.time()
+        print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total}) process ({process_total/steps}, {process_total}) append ({append_total/steps},{append_total})")
+        print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} coco Load {end_coco_load - end_total_infer} gather res {end_gather_result - end_coco_load} coco_eval {end_coco_eval - end_gather_result}")
