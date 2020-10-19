@@ -16,22 +16,17 @@
 # limitations under the License.
 
 """Model definition for the Mask-RCNN Model.
-
 Defines model_fn of Mask-RCNN for TF Estimator. The model_fn includes Mask-RCNN
 model architecture, loss function, learning rate schedule, and evaluation
 procedure.
-
 """
-
-import sys
-import itertools
-import copy,os
-import numpy as np
 import time
+import itertools
+import copy
+import numpy as np
 import multiprocessing
 from statistics import mean
 import threading
-from collections import defaultdict
 from math import ceil
 from mpi4py import MPI
 from tqdm import tqdm
@@ -39,7 +34,7 @@ import os
 
 import h5py
 import tensorflow as tf
-#import tensorflow_addons as tfa
+import tensorflow_addons as tfa
 from tensorflow.core.protobuf import rewriter_config_pb2
 from mask_rcnn import anchors
 
@@ -57,7 +52,6 @@ from mask_rcnn.ops import training_ops
 
 from mask_rcnn.utils.logging_formatter import logging
 
-from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_local_rank, MPI_rank
 from mask_rcnn import evaluation, coco_metric
 
 from mask_rcnn.utils.meters import StandardMeter
@@ -74,21 +68,10 @@ from mask_rcnn.utils.herring_env import is_herring
 
 if is_herring():
     import herring.tensorflow as herring
+    from mask_rcnn.utils.distributed_utils_herring import MPI_is_distributed, MPI_local_rank, MPI_rank
 else:
     hvd = LazyImport("horovod.tensorflow")
-from tensorflow.python.profiler import profiler_v2 as tf_profiler
-from tensorflow.python.profiler.trace import Trace as prof_Trace
-try:
-    from tensorflow.python import _pywrap_nvtx as nvtx
-except ImportError:
-    class DummyNvtx:
-        def __init__(self):
-            pass
-        def push(self,a=None,b=None):
-            pass
-        def pop(self,a=None):
-            pass
-    nvtx=DummyNvtx()
+    from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_local_rank, MPI_rank
 
 MODELS = dict()
 
@@ -248,21 +231,18 @@ class MRCNN(tf.keras.Model):
                                                 name="mask_head"
                                             )
     def call(self, features, labels, params, is_training=True):
-        if 'source_ids' not in features:
-            features['source_ids'] = -1 * tf.ones([1], dtype=tf.float32)
-        return self.__call(features['images'],features['source_ids'],features['image_info'],labels,params,is_training)
-    @tf.function(experimental_compile=False)
-    def __call(self,images,source_ids,image_info, labels, params, is_training=False):
         model_outputs = {}
         is_gpu_inference = not is_training and params['use_batched_nms']
-        batch_size, image_height, image_width, _ = images.get_shape().as_list()
+        batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
+        if 'source_ids' not in features:
+            features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
 
         all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
                                       params['num_scales'], params['aspect_ratios'],
                                       params['anchor_scale'],
                                       (image_height, image_width))
         backbone_feats = self.backbone(
-            images,
+            features['images'],
             training=is_training,
         )
         fpn_feats = self.fpn(backbone_feats, training=is_training)
@@ -286,7 +266,7 @@ class MRCNN(tf.keras.Model):
                 scores_outputs=rpn_score_outputs,
                 box_outputs=rpn_box_outputs,
                 all_anchors=all_anchors,
-                image_info=image_info,
+                image_info=features['image_info'],
                 rpn_pre_nms_topn=rpn_pre_nms_topn,
                 rpn_post_nms_topn=rpn_post_nms_topn,
                 rpn_nms_threshold=rpn_nms_threshold,
@@ -297,7 +277,7 @@ class MRCNN(tf.keras.Model):
                 scores_outputs=rpn_score_outputs,
                 box_outputs=rpn_box_outputs,
                 all_anchors=all_anchors,
-                image_info=image_info,
+                image_info=features['image_info'],
                 rpn_pre_nms_topn=rpn_pre_nms_topn,
                 rpn_post_nms_topn=rpn_post_nms_topn,
                 rpn_nms_threshold=rpn_nms_threshold,
@@ -345,7 +325,7 @@ class MRCNN(tf.keras.Model):
                 class_outputs=class_outputs,
                 box_outputs=box_outputs,
                 anchor_boxes=rpn_box_rois,
-                image_info=image_info,
+                image_info=features['image_info'],
                 pre_nms_num_detections=params['test_rpn_post_nms_topn'],
                 post_nms_num_detections=params['test_detections_per_image'],
                 nms_threshold=params['test_nms'],
@@ -363,12 +343,16 @@ class MRCNN(tf.keras.Model):
                                   'box_outputs': box_outputs,
                                   'anchor_boxes': rpn_box_rois})
         else:  # is training
-            encoded_box_targets = training_ops.encode_box_targets(
-                boxes=rpn_box_rois,
-                gt_boxes=box_targets,
-                gt_labels=class_targets,
-                bbox_reg_weights=params['bbox_reg_weights']
-            )
+            def is_iou_based_loss(loss_type):
+                return loss_type in ["giou", "diou", "ciou", "iou"]
+
+            if not is_iou_based_loss(params['box_loss_type']):
+                encoded_box_targets = training_ops.encode_box_targets(
+                    boxes=rpn_box_rois,
+                    gt_boxes=box_targets,
+                    gt_labels=class_targets,
+                    bbox_reg_weights=params['bbox_reg_weights']
+                )
 
             model_outputs.update({
                 'rpn_score_outputs': rpn_score_outputs,
@@ -376,7 +360,7 @@ class MRCNN(tf.keras.Model):
                 'class_outputs': class_outputs,
                 'box_outputs': box_outputs,
                 'class_targets': class_targets,
-                'box_targets': encoded_box_targets,
+                'box_targets': box_targets if is_iou_based_loss(params['box_loss_type']) else encoded_box_targets,
                 'box_rois': rpn_box_rois,
             })
         # Faster-RCNN mode.
@@ -447,7 +431,6 @@ class MRCNN(tf.keras.Model):
     
 def _model_fn(features, labels, mode, params):
     """Model defination for the Mask-RCNN model based on ResNet.
-
     Args:
     features: the input image tensor and auxiliary information, such as
       `image_info` and `source_ids`. The image tensor has a shape of
@@ -523,6 +506,8 @@ def _model_fn(features, labels, mode, params):
         box_outputs=model_outputs['box_outputs'],
         class_targets=model_outputs['class_targets'],
         box_targets=model_outputs['box_targets'],
+        rpn_box_rois=model_outputs['box_rois'],
+        image_info=features['image_info'],
         params=params
     )
 
@@ -583,7 +568,7 @@ def _model_fn(features, labels, mode, params):
                 warmup_learning_rate=params['warmup_learning_rate'],
                 warmup_steps=params['warmup_steps'],
                 first_decay_steps=params['total_steps'],
-                alpha= 0.001 #* params['init_learning_rate']
+                alpha= 0.001
             )
         else:
             raise NotImplementedError
@@ -695,6 +680,8 @@ class SessionModel(object):
             box_outputs=model_outputs['box_outputs'],
             class_targets=model_outputs['class_targets'],
             box_targets=model_outputs['box_targets'],
+            rpn_box_rois=model_outputs['box_rois'],
+            image_info=features['image_info'],
             params=self.run_config.values()
         )
         if self.run_config.include_mask:
@@ -833,11 +820,11 @@ class SessionModel(object):
         else:
             config.gpu_options.force_gpu_compatible = True
             if MPI_is_distributed():
-                config.gpu_options.visible_device_list = ",".join([str(x) for x in range(len(os.environ.get("CUDA_VISIBLE_DEVICES","0").split(",")))])
+                config.gpu_options.visible_device_list = str(MPI_local_rank())
         if use_xla:
             logging.info("XLA is activated - Experiment Feature")
             config.graph_options.optimizer_options.global_jit_level = tf.compat.v1.OptimizerOptions.ON_1
-        config.intra_op_parallelism_threads = 2  # Avoid pool of Eigen threads
+        config.intra_op_parallelism_threads = 1  # Avoid pool of Eigen threads
         if MPI_is_distributed():
             config.inter_op_parallelism_threads = max(2, multiprocessing.cpu_count() // hvd.local_size())
         elif not use_tf_distributed:
@@ -853,7 +840,6 @@ class TapeModel(object):
         self.forward = MRCNN(self.params.values(), is_training=is_training)
         self.model_dir = self.params.model_dir
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
-        print("SAMI SAMI ",train_input_fn)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
         eval_params = dict(self.params.values(), batch_size=self.params.eval_batch_size)
@@ -878,7 +864,8 @@ class TapeModel(object):
                                                          alpha=0.001)
         else:
             raise NotImplementedError
-        
+        schedule = warmup_scheduler.WarmupScheduler(schedule, self.params.warmup_learning_rate,
+                                                    self.params.warmup_steps)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)
@@ -895,27 +882,30 @@ class TapeModel(object):
         if self.params.amp:
             opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, 'dynamic')
         return opt, schedule
-    
-    @tf.function(experimental_compile=False)
+
+
+    @tf.function
     def train_step(self, features, labels, sync_weights=False, sync_opt=False):
         loss_dict = dict()
         with tf.GradientTape() as tape:
             model_outputs = self.forward(features, labels, self.params.values(), True)
             loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
                 loss_dict['rpn_box_loss'] = losses.rpn_loss(
-                score_outputs=model_outputs['rpn_score_outputs'],
-                box_outputs=model_outputs['rpn_box_outputs'],
-                labels=labels,
-                params=self.params.values()
-            )
+                    score_outputs=model_outputs['rpn_score_outputs'],
+                    box_outputs=model_outputs['rpn_box_outputs'],
+                    labels=labels,
+                    params=self.params.values()
+                )
             loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
                 loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
-                class_outputs=model_outputs['class_outputs'],
-                box_outputs=model_outputs['box_outputs'],
-                class_targets=model_outputs['class_targets'],
-                box_targets=model_outputs['box_targets'],
-                params=self.params.values()
-            )
+                    class_outputs=model_outputs['class_outputs'],
+                    box_outputs=model_outputs['box_outputs'],
+                    class_targets=model_outputs['class_targets'],
+                    box_targets=model_outputs['box_targets'],
+                    rpn_box_rois=model_outputs['box_rois'],
+                    image_info=features['image_info'],
+                    params=self.params.values()
+                )
             if self.params.include_mask:
                 loss_dict['mask_loss'] = losses.mask_rcnn_loss(
                     mask_outputs=model_outputs['mask_outputs'],
@@ -947,7 +937,23 @@ class TapeModel(object):
                 gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
             else:
                 gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
-            self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
+            global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
+            if global_gradient_clip_ratio > 0.0:
+                all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
+                (clipped_grads, _) = tf.clip_by_global_norm(gradients, clip_norm=global_gradient_clip_ratio,
+                                use_norm=tf.cond(all_are_finite, lambda: tf.linalg.global_norm(gradients), lambda: tf.constant(1.0)))
+                gradients = clipped_grads
+        
+            grads_and_vars = []
+            # Special treatment for biases (beta is named as bias in reference model)
+            # Reference: https://github.com/ddkang/Detectron/blob/80f3295308/lib/modeling/optimizer.py#L109
+            for grad, var in zip(gradients, self.forward.trainable_variables):
+                if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
+                    grad = 2.0 * grad
+                grads_and_vars.append((grad, var))
+
+            # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
+            self.optimizer.apply_gradients(grads_and_vars)
             if MPI_is_distributed(True) and sync_weights:
                 if MPI_rank(True)==0:
                     logging.info("Broadcasting variables")
@@ -957,7 +963,7 @@ class TapeModel(object):
                     logging.info("Broadcasting optimizer")
                 herring.broadcast_variables(self.optimizer.variables(), 0)        
         else:
-            if MPI_is_distributed():
+            if MPI_is_distributed(False):
                 tape = hvd.DistributedGradientTape(tape, compression=hvd.compression.NoneCompressor)
             if self.params.amp:
                 scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
@@ -982,32 +988,25 @@ class TapeModel(object):
             # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
             self.optimizer.apply_gradients(grads_and_vars)
 
-            if MPI_is_distributed() and sync_weights:
-                if MPI_rank()==0:
+            if MPI_is_distributed(False) and sync_weights:
+                if MPI_rank(False)==0:
                     logging.info("Broadcasting variables")
                 hvd.broadcast_variables(self.forward.variables, 0)
-            if MPI_is_distributed() and sync_opt:
-                if MPI_rank()==0:
+            if MPI_is_distributed(False) and sync_opt:
+                if MPI_rank(False)==0:
                     logging.info("Broadcasting optimizer")
                 hvd.broadcast_variables(self.optimizer.variables(), 0)
         return loss_dict
     
     def initialize_model(self):
-        if MPI_rank()==0:
-            logging.info("Initializing model")
         features, labels = next(self.train_tdf)
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
-        b_w = tf.convert_to_tensor(True)
-        b_o = tf.convert_to_tensor(True)
-        loss_dict = self.train_step(features, labels, b_w, b_o)
-        prediction = self.predict(features)
     
-    def train_epoch(self, steps, broadcast=False,profile=None):
+    def train_epoch(self, steps, broadcast=False, profile=None):
         if MPI_rank(is_herring())==0:
             logging.info("Starting training loop")
-            p_bar = tqdm(range(steps), file=sys.stdout, 
-                         bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+            p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
             loss_history = []
         else:
             p_bar = range(steps)
@@ -1048,13 +1047,13 @@ class TapeModel(object):
                 else:
                     b_w, b_o = False, False
                 tstart=time.perf_counter()
-                step_token=nvtx.push(f"{runtype}-{i}",runtype)
+                #step_token=nvtx.push(f"{runtype}-{i}",runtype)
                 features, labels = next(self.train_tdf)
                 b_w = tf.convert_to_tensor(b_w)
                 b_o = tf.convert_to_tensor(b_o)
                 loss_dict = self.train_step(features, labels, b_w, b_o)
                 times.append(time.perf_counter()-tstart)
-                nvtx.pop(step_token)
+                #nvtx.pop(step_token)
                 if MPI_rank(is_herring())==0:
                     loss_history.append(loss_dict['total_loss'].numpy())
                     step = self.optimizer.iterations
@@ -1062,12 +1061,13 @@ class TapeModel(object):
                     p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
                                                                             learning_rate))
 
-        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[1:])*1000.} +/- {np.std(times[1:])*1000.} ms")
+        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")
         if MPI_rank(is_herring()) == 0:
+            #print(f'average step time={np.mean(timings[10:])} +/- {np.std(timings[10:])}')
             print("Saving checkpoint...")
             self.epoch_num+=1
             self.save_model()
-
+            
     def get_latest_checkpoint(self):
         try:
             return sorted([_ for _ in os.listdir(self.model_dir) if _.endswith(".h5")])[-1]
@@ -1088,6 +1088,7 @@ class TapeModel(object):
         for i in range(len(file.keys())):
             weights.append(file['weight'+str(i)][:])
         self.forward.set_weights(weights)
+    
 
     @tf.function            
     def predict(self, features):
@@ -1102,8 +1103,7 @@ class TapeModel(object):
     def run_eval(self, steps, async_eval=False, use_ext=False):
         if MPI_rank(is_herring())==0:
             logging.info("Starting eval loop")
-            p_bar = tqdm(range(steps), file=sys.stdout, 
-                         bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+            p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
         else:
             p_bar = range(steps)
         worker_predictions = dict()
@@ -1122,16 +1122,11 @@ class TapeModel(object):
             _preds[k] = np.concatenate(v, axis=0)
         if MPI_rank(is_herring()) < 32:
             converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
-            # converted_predictions = coco.load_predictions2(_preds, include_mask=True, is_image_mask=False)
             worker_source_ids = _preds['source_id']
-            # worker_source_ids = list(converted_predictions.keys())
         else:
-            #converted_predictions = defaultdict(list)
-            converted_predictions =[]
+            converted_predictions = []
             worker_source_ids = []
         MPI.COMM_WORLD.barrier()
-        if MPI_rank() == 0:
-            logging.info("Gathering logs")
         predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
         source_ids_list = evaluation.gather_result_from_all_processes(worker_source_ids)
         validation_json_file=self.params.val_json_file
@@ -1139,19 +1134,11 @@ class TapeModel(object):
             all_predictions = []
             source_ids = []
             for i, p in enumerate(predictions_list):
-                all_predictions.extend(p)
+                if i < 32:
+                    all_predictions.extend(p)
             for i, s in enumerate(source_ids_list):
-                source_ids.extend(s)
-            '''all_predictions = []
-            source_ids = []
-            logging.info("Assembling results")
-            for i, p in enumerate(predictions_list):
-                for a_key, a_value in p.items():
-                    if a_key not in source_ids:
-                        source_ids.append(a_key)
-                        all_predictions.extend(a_value)'''
-            logging.info("{} images in detection results".format(len(source_ids)))
-            logging.info("{} unique images in detection results".format(len(set(source_ids))))
+                if i < 32:
+                    source_ids.extend(s)
             if use_ext:
                 args = [all_predictions, validation_json_file]
                 if async_eval:

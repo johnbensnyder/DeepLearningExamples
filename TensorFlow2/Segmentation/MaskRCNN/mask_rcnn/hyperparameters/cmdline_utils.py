@@ -164,6 +164,10 @@ def define_hparams_flags():
     flags.DEFINE_string('mode', default='train_and_eval', help='Mode to run: train or eval')
     
     flags.DEFINE_string('optimizer_type', default='SGD', help='Optimizer to use - SGD or LAMB')
+    flags.DEFINE_string('box_loss_type', default='huber', help='Box loss to use for final box refinement stage - huber or giou or ciou')
+
+    flags.DEFINE_float('label_smoothing', default=0.0, help='Label smoothing value for sigmoid cross entropy losses')
+
     
     flags.DEFINE_string('lr_schedule', default='piecewise', help='Learning rate schedule - piecewise or cosine')
     

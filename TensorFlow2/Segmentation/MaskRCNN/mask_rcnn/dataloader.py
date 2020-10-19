@@ -31,11 +31,10 @@ import tensorflow as tf
 from mask_rcnn.utils.herring_env import is_herring
 from mask_rcnn.utils.logging_formatter import logging
 
-from mask_rcnn.utils.distributed_utils import MPI_is_distributed
-from mask_rcnn.utils.distributed_utils import MPI_rank_and_size
-from mask_rcnn.utils.distributed_utils import MPI_rank
-from mask_rcnn.utils.distributed_utils import MPI_size
-
+if is_herring():
+    from mask_rcnn.utils.distributed_utils_herring import MPI_is_distributed, MPI_rank_and_size, MPI_rank, MPI_size
+else:
+    from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank_and_size, MPI_rank, MPI_size
 # common functions
 from mask_rcnn.dataloader_utils import dataset_parser
 
@@ -311,13 +310,13 @@ if __name__ == "__main__":
 
   import numpy as np
 
-  os.environ["CUDA_VISIBLE_DEVICES"]=os.environ.get(
-          "CUDA_VISIBLE_DEVICES", str(MPI.COMM_WORLD.Get_rank() % 8))
+  #os.environ["CUDA_VISIBLE_DEVICES"]=os.environ.get(
+  #        "CUDA_VISIBLE_DEVICES", str(MPI.COMM_WORLD.Get_rank() % 8))
   #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-  os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
-  os.environ['TF_GPU_THREAD_COUNT'] = '1'
-  os.environ["TF_NUM_INTRAOP_THREADS"]=os.environ.get("TF_NUM_INTRAOP_THREADS","7")
-  os.environ["TF_NUM_INTEROP_THREADS"]=os.environ.get("TF_NUM_INTEROP_THREADS","6")
+  #os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
+  #os.environ['TF_GPU_THREAD_COUNT'] = '1'
+  #os.environ["TF_NUM_INTRAOP_THREADS"]=os.environ.get("TF_NUM_INTRAOP_THREADS","7")
+  #os.environ["TF_NUM_INTEROP_THREADS"]=os.environ.get("TF_NUM_INTEROP_THREADS","6")
 
   logging.set_verbosity(logging.INFO)
 

@@ -21,7 +21,13 @@ import re
 import tensorflow as tf
 
 from mask_rcnn.utils.logging_formatter import logging
-from mask_rcnn.utils.distributed_utils import MPI_rank
+
+from mask_rcnn.utils.herring_env import is_herring()
+
+if is_herring():
+    from mask_rcnn.utils.distributed_utils_herring import MPI_rank
+else:
+    from mask_rcnn.utils.distributed_utils import MPI_rank
 
 __all__ = ["PretrainedWeightsLoadingHook"]
 
