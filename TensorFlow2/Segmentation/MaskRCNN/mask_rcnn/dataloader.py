@@ -24,15 +24,17 @@ import math
 import multiprocessing
 import glob
 from mpi4py import MPI
+import sys
 import tensorflow as tf
 from mask_rcnn.utils.herring_env import is_herring
 from mask_rcnn.utils.logging_formatter import logging
 
-from mask_rcnn.utils.distributed_utils import MPI_is_distributed
-from mask_rcnn.utils.distributed_utils import MPI_rank_and_size
-from mask_rcnn.utils.distributed_utils import MPI_rank
-from mask_rcnn.utils.distributed_utils import MPI_size
+from mask_rcnn.utils.herring_env import is_herring
 
+if is_herring():
+    from mask_rcnn.utils.distributed_utils_herring import MPI_is_distributed, MPI_rank_and_size, MPI_rank, MPI_size
+else:
+    from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank_and_size, MPI_rank, MPI_size
 # common functions
 from mask_rcnn.dataloader_utils import dataset_parser
 
@@ -67,6 +69,7 @@ class InputReader(object):
                              params=params,
                              use_instance_mask=self._use_instance_mask,
                              seed=self._seed)
+                             
 
   def __call__(self, params, input_context=None):
 
@@ -374,6 +377,10 @@ if __name__ == "__main__":
                       default=False,
                       action="store_true",
                       help="Use synthetic dataset")
+  parser.add_argument("--preprocessed",
+                      default=False,
+                      action="store_true",
+                      help="Use preprocessed data")
 
   parser.add_argument("--dist_eval",
                       default=False,
@@ -452,7 +459,7 @@ if __name__ == "__main__":
   ds_params["image_size"] = [832, 1344]
   ds_params["warmup_steps"]=FLAGS.warmup_steps
   ds_params["benchmark_steps"]=FLAGS.benchmark_steps
-
+  ds_params["preprocessed_data"] = FLAGS.preprocessed
   dataset = input_dataset(params=ds_params)
 
   if not FLAGS.tf2:
@@ -559,6 +566,7 @@ if __name__ == "__main__":
         features,labels = next(data_iter)
         nvtx.pop(r)
       except:
+        print("Got exception in step",step,sys.exc_info[0])
         break
       now = time.perf_counter()
       elapsed_time = now - curr_time  #in seconds
