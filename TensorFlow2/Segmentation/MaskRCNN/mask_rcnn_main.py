@@ -48,7 +48,7 @@ if is_herring():
 else:
     from mpi4py import MPI
     CURR_GPU_INDEX=str(MPI.COMM_WORLD.Get_rank()%8)
-    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES",CURR_GPU_INDEX)
+    #os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES",CURR_GPU_INDEX)
     #os.environ["CUDA_VISIBLE_DEVICES"] = '0'    
     from mask_rcnn.utils.distributed_utils import MPI_rank, MPI_is_distributed
 
