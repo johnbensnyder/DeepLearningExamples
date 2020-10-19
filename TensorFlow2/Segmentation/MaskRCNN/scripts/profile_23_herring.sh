@@ -26,7 +26,7 @@ rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
  
 
-/shared/rejin/conda/bin/herringrun -n 8 -c /shared/rejin/conda \
+/shared/rejin/conda/bin/herringrun -n 32 -c /shared/rejin/conda \
     RUN_HERRING=1 \
     /shared/rejin/conda/bin/python ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \

@@ -16,9 +16,11 @@
 # limitations under the License.
 
 """Model definition for the Mask-RCNN Model.
+
 Defines model_fn of Mask-RCNN for TF Estimator. The model_fn includes Mask-RCNN
 model architecture, loss function, learning rate schedule, and evaluation
 procedure.
+
 """
 import time
 import itertools
@@ -431,6 +433,7 @@ class MRCNN(tf.keras.Model):
     
 def _model_fn(features, labels, mode, params):
     """Model defination for the Mask-RCNN model based on ResNet.
+
     Args:
     features: the input image tensor and auxiliary information, such as
       `image_info` and `source_ids`. The image tensor has a shape of
@@ -1155,3 +1158,4 @@ class TapeModel(object):
                     eval_thread.start()
                 else:
                     evaluation.compute_coco_eval_metric_n(*args)
+

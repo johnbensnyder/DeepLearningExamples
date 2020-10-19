@@ -28,10 +28,10 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
     if is_herring():
         import herring.tensorflow as herring
         gpus = tf.config.list_physical_devices('GPU')
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
+        #for gpu in gpus:
+        #    tf.config.experimental.set_memory_growth(gpu, True)
         if gpus:
-            tf.config.set_visible_devices(gpus[0], 'GPU')
+            tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
     else:
         if MPI_is_distributed(False):
             import horovod.tensorflow as hvd
