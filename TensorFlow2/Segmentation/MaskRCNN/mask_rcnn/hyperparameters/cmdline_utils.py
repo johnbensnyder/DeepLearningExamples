@@ -103,6 +103,12 @@ def define_hparams_flags():
         default=False,
         help=('If set use static dataloader for training (precomputing anchors).')
     )
+
+    flags.DEFINE_bool(
+        'preprocessed_data',
+        default=False,
+        help=('If set use precomputed masks.')
+    )
     
     flags.DEFINE_bool(
         'disable_data_options',

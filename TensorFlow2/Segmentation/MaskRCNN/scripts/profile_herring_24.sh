@@ -24,10 +24,10 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
  
-
-/shared/sami/conda/bin/herringrun_profile -n 8  -c /shared/sami/conda \
+export NCCL_DEBUG=INFO
+herringrun -n 2  -c /shared/sami/conda -x NCCL_DEBUG \
     RUN_HERRING=1 \
-    /shared/sami/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
