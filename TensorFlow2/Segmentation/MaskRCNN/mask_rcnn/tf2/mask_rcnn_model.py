@@ -51,6 +51,7 @@ from mask_rcnn.ops import postprocess_ops
 from mask_rcnn.ops import roi_ops
 from mask_rcnn.ops import spatial_transform_ops
 from mask_rcnn.ops import training_ops
+from mask_rcnn.ops import preprocess_ops
 
 from mask_rcnn.utils.logging_formatter import logging
 
@@ -231,6 +232,8 @@ class MRCNN(tf.keras.Model):
                                                 trainable=is_training,
                                                 name="mask_head"
                                             )
+    
+    @tf.function(experimental_relax_shapes=True)
     def call(self, features, labels, params, is_training=True):
         model_outputs = {}
         is_gpu_inference = not is_training and params['use_batched_nms']
@@ -397,12 +400,18 @@ class MRCNN(tf.keras.Model):
             compute_model_statistics(batch_size, is_training=is_training)'''
 
         if is_training:
+            if params['delay_masks']:
+                with tf.xla.experimental.jit_scope(compile_ops=False):
+                    cropped_gt_masks = preprocess_ops.preprocess_masks(labels['instance_masks'][0], labels['orig_boxes'][0], 
+                                                 features['image_info'][0], params)
+            else:
+                cropped_gt_masks = labels['cropped_gt_masks']
             mask_targets = training_ops.get_mask_targets(
 
                 fg_boxes=selected_box_rois,
                 fg_proposal_to_label_map=proposal_to_label_map,
                 fg_box_targets=selected_box_targets,
-                mask_gt_labels=labels['cropped_gt_masks'],
+                mask_gt_labels=cropped_gt_masks,
                 output_size=params['mrcnn_resolution']
             )
 
@@ -883,7 +892,7 @@ class TapeModel(object):
         return opt, schedule
 
 
-    @tf.function
+    @tf.function(experimental_relax_shapes=True)
     def train_step(self, features, labels, sync_weights=False, sync_opt=False):
         loss_dict = dict()
         with tf.GradientTape() as tape:

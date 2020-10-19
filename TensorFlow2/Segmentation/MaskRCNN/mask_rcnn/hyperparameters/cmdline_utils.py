@@ -137,6 +137,13 @@ def define_hparams_flags():
         )
     )
     
+    flags.DEFINE_bool(
+        'delay_masks',
+        default=False,
+        help=('delay mask generation to model graph. Can improve performance with high CPU GPU imbalance (only available with batch=1).')
+    
+    )
+    
 
     # Gradient clipping is a fairly coarse heuristic to stabilize training.
     # This model clips the gradient by its L2 norm globally (i.e., across
