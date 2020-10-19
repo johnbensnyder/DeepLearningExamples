@@ -16,11 +16,9 @@
 # limitations under the License.
 # ==============================================================================
 """Data loader and processing.
-
 Defines input_fn of Mask-RCNN for TF Estimator. The input_fn includes training
 data for category classification, bounding box regression, and number of
 positive examples to normalize the loss during training.
-
 """
 
 import tensorflow as tf
@@ -56,12 +54,11 @@ __all__ = [
 
 ###############################################################################################################
 
-def dataset_parser(value, mode, params, use_instance_mask, seed=None, regenerate_source_id=False):
+def dataset_parser(value, mode, params, use_instance_mask, seed=None, 
+                   regenerate_source_id=False):
     """Parse data to a fixed dimension input image and learning targets.
-
     Args:
     value: A dictionary contains an image and groundtruth annotations.
-
     Returns:
     features: a dictionary that contains the image and auxiliary
       information. The following describes {key: value} pairs in the
@@ -106,7 +103,7 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None, regenerate
 
     example_decoder = create_example_decoder()
 
-    with tf.xla.experimental.jit_scope(compile_ops=False):
+    with tf.xla.experimental.jit_scope(compile_ops=True):
 
         with tf.name_scope('parser'):
 
@@ -162,17 +159,19 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None, regenerate
                     use_category=params['use_category'],
                     use_instance_mask=use_instance_mask
                 )
-
+                
                 image, image_info, boxes, instance_masks = preprocess_image(
-                    image,
-                    boxes=boxes,
-                    instance_masks=instance_masks,
-                    image_size=params['image_size'],
-                    max_level=params['max_level'],
-                    augment_input_data=params['augment_input_data'],
-                    seed=seed
-                )
-
+                        image,
+                        boxes=boxes,
+                        instance_masks=instance_masks,
+                        image_size=params['image_size'],
+                        max_level=params['max_level'],
+                        delay_masks=params['delay_masks'],
+                        augment_input_data=params['augment_input_data'],
+                        seed=seed
+                    )
+                
+                
                 features.update({
                     'images': image,
                     'image_info': image_info,
@@ -182,13 +181,17 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None, regenerate
 
                 # Pads cropped_gt_masks.
                 if use_instance_mask:
-                    labels['cropped_gt_masks'] = process_gt_masks_for_training(
-                        instance_masks,
-                        boxes,
-                        gt_mask_size=params['gt_mask_size'],
-                        padded_image_size=padded_image_size,
-                        max_num_instances=MAX_NUM_INSTANCES
-                    )
+                    if params['delay_masks']:
+                        labels['orig_boxes'] = boxes
+                        labels['instance_masks'] = instance_masks
+                    else:
+                        labels['cropped_gt_masks'] = process_gt_masks_for_training(
+                            instance_masks,
+                            boxes,
+                            gt_mask_size=params['gt_mask_size'],
+                            padded_image_size=padded_image_size,
+                            max_num_instances=MAX_NUM_INSTANCES
+                        )
 
                 with tf.xla.experimental.jit_scope(compile_ops=False):
                     # Assign anchors.
@@ -261,7 +264,8 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None, regenerate
 # common functions
 
 
-def preprocess_image(image, boxes, instance_masks, image_size, max_level, augment_input_data=False, seed=None):
+def preprocess_image(image, boxes, instance_masks, image_size, max_level, delay_masks=False,
+                     augment_input_data=False, seed=None):
     
     image = preprocess_ops.normalize_image(image)
 
@@ -269,13 +273,22 @@ def preprocess_image(image, boxes, instance_masks, image_size, max_level, augmen
         image, boxes, instance_masks = augment_image(image=image, boxes=boxes, instance_masks=instance_masks, seed=seed)
 
     # Scaling and padding.
-    image, image_info, boxes, instance_masks = preprocess_ops.resize_and_pad(
-        image=image,
-        target_size=image_size,
-        stride=2 ** max_level,
-        boxes=boxes,
-        masks=instance_masks
-    )
+    if delay_masks:
+        image, image_info, boxes, _ = preprocess_ops.resize_and_pad(
+            image=image,
+            target_size=image_size,
+            stride=2 ** max_level,
+            boxes=boxes,
+            masks=None
+        )
+    else:
+        image, image_info, boxes, instance_masks = preprocess_ops.resize_and_pad(
+            image=image,
+            target_size=image_size,
+            stride=2 ** max_level,
+            boxes=boxes,
+            masks=instance_masks
+        )
     return image, image_info, boxes, instance_masks
 
 

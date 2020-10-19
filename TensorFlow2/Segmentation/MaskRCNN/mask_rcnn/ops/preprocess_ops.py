@@ -214,3 +214,40 @@ def pad_to_fixed_size(data, pad_value, output_shape):
 
     padded_data = tf.reshape(tf.concat([data, paddings], axis=0), output_shape)
     return padded_data
+
+
+def preprocess_masks(instance_masks, boxes, image_info, params, max_num_instances=100):
+    scaled_height = image_info[0]
+    scaled_width = image_info[1]
+
+    stride = 2**params['max_level']
+    target_height = params['image_size'][0]
+    target_width = params['image_size'][1]
+    padded_height = int(math.ceil(target_height * 1.0 / stride) * stride)
+    padded_width = int(math.ceil(target_width * 1.0 / stride) * stride)
+
+    scaled_masks = tf.image.resize(
+        tf.expand_dims(instance_masks, -1),
+        [scaled_height, scaled_width],
+        method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+    )
+
+    num_masks = tf.shape(input=scaled_masks)[0]
+    scaled_masks = tf.cond(
+            pred=tf.greater(num_masks, 0),
+            true_fn=lambda: tf.image.pad_to_bounding_box(scaled_masks, 0, 0, padded_height, padded_width),
+            false_fn=lambda: tf.zeros([0, padded_height, padded_width, 1])
+        )
+    cropped_gt_masks = crop_gt_masks(
+            instance_masks=scaled_masks,
+            boxes=boxes,
+            gt_mask_size=params['gt_mask_size'],
+            image_size=params['image_size']
+        )
+    cropped_gt_masks = pad_to_fixed_size(
+            data=cropped_gt_masks,
+            pad_value=-1,
+            output_shape=[max_num_instances, (params['gt_mask_size'] + 4) ** 2]
+        )
+    processed_masks = tf.reshape(cropped_gt_masks, [1, max_num_instances, params['gt_mask_size'] + 4, params['gt_mask_size'] + 4])
+    return processed_masks

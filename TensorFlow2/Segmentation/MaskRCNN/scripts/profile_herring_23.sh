@@ -49,11 +49,12 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --eval_batch_size=1 \
         --dist_eval \
 	--first_eval=22 \
-        --training_file_pattern="/home/ubuntu/fast_coco/train*.tfrecord" \
+        --training_file_pattern="/shared/data2/train*.tfrecord" \
         --validation_file_pattern="/shared/data2/val*.tfrecord" \
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \
         --tf2 \
+	--delay_masks \
         --use_custom_box_proposals_op | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log

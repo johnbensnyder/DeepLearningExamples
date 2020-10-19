@@ -165,6 +165,12 @@ def define_hparams_flags():
     
     flags.DEFINE_string('lr_schedule', default='piecewise', help='Learning rate schedule - piecewise or cosine')
 
+    flags.DEFINE_bool(
+        'delay_masks',
+        default=False,
+        help=('delay mask generation to model graph. Can improve performance with high CPU GPU imbalance (only available with batch=1).')
+
+    )
     flags.DEFINE_string(
         'model_dir',
         default=None,

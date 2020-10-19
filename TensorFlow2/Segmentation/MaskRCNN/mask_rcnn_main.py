@@ -146,6 +146,8 @@ def main(argv):
         if not RUN_CONFIG.include_groundtruth_in_features and not os.path.isfile(RUN_CONFIG.val_json_file):
             raise FileNotFoundError("Validation JSON File not found: %s" % RUN_CONFIG.val_json_file)
 
+    if RUN_CONFIG.delay_masks and RUN_CONFIG.train_batch_size>1:
+        raise RuntimeError('delay_masks only available with batch size 1')
     dllogger.init(backends=[dllogger.JSONStreamBackend(verbosity=dllogger.Verbosity.VERBOSE,
                                                            filename=RUN_CONFIG.log_path)])
 
