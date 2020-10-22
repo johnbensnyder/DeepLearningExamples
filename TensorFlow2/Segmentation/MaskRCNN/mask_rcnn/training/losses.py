@@ -386,18 +386,18 @@ def _fast_rcnn_class_loss(class_outputs, class_targets_one_hot, weights=1.0, nor
     return class_loss
 
 
-def _fast_rcnn_box_loss(box_outputs, box_targets, class_targets, weights=1.0, loss_type='huber', normalizer=1.0, delta=1.):
+def _fast_rcnn_box_loss(box_outputs, box_targets, class_targets, params, weights=1.0, loss_type='huber', normalizer=1.0, delta=1.):
     """Computes box regression loss."""
     # delta is typically around the mean value of regression target.
     # for instances, the regression targets of 512x512 input with 6 anchors on
     # P2-P6 pyramid is about [0.1, 0.1, 0.2, 0.2].
 
     with tf.name_scope('fast_rcnn_box_loss'):
-        if tf.rank(weights)==0:
+        if params['use_weights']:
+            mask = tf.tile(tf.expand_dims(weights, axis=2), [1, 1, 4])
+        else:
             mask = tf.tile(tf.expand_dims(tf.greater(class_targets, 0), axis=2), [1, 1, 4])
             mask = tf.cast(mask, tf.float32)
-        else:
-            mask = tf.tile(tf.expand_dims(weights, axis=2), [1, 1, 4])
         # The loss is normalized by the sum of non-zero weights before additional
         # normalizer provided by the function caller.
         if loss_type == 'huber':
@@ -477,13 +477,13 @@ def fast_rcnn_loss(class_outputs, box_outputs, class_targets, box_targets, rpn_b
             box_outputs = box_utils.decode_boxes(encoded_boxes=box_outputs, anchors=rpn_box_rois, weights=params['bbox_reg_weights'])
             # Clip boxes FIXME: hardcoding for now
             box_outputs = box_utils.clip_boxes(box_outputs, 832., 1344.)
-
-
+        
         box_outputs = tf.reshape(box_outputs, [batch_size, -1, 4])
         box_loss = _fast_rcnn_box_loss(
             box_outputs=box_outputs,
             box_targets=box_targets,
             class_targets=class_targets,
+            params=params,
             loss_type=params['box_loss_type'],
             normalizer=1.0,
             weights=weights,
@@ -498,7 +498,7 @@ def fast_rcnn_loss(class_outputs, box_outputs, class_targets, box_targets, rpn_b
             class_outputs=class_outputs,
             class_targets_one_hot=_class_targets,
             weights=weights,
-            normalizer=1.0
+            normalizer=1.0,
         )
 
         total_loss = class_loss + box_loss
@@ -535,17 +535,17 @@ def mask_rcnn_loss(mask_outputs, mask_targets, select_class_targets, params, mas
     with tf.name_scope('mask_loss'):
         batch_size, num_masks, mask_height, mask_width = mask_outputs.get_shape().as_list()
         
-        if tf.rank(mask_weights)==0:
+        if params['use_weights']:
+            weights = tf.tile(
+                tf.reshape(mask_weights, [batch_size, num_masks, 1, 1]),
+                [1, 1, mask_height, mask_width]
+            )
+        else:
             weights = tf.tile(
                 tf.reshape(tf.greater(select_class_targets, 0), [batch_size, num_masks, 1, 1]),
                 [1, 1, mask_height, mask_width]
             )
             weights = tf.cast(weights, tf.float32)
-        else:
-            weights = tf.tile(
-                tf.reshape(mask_weights, [batch_size, num_masks, 1, 1]),
-                [1, 1, mask_height, mask_width]
-            )
 
         loss = _sigmoid_cross_entropy(
             multi_class_labels=mask_targets,

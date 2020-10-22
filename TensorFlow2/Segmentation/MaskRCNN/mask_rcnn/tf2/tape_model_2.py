@@ -137,7 +137,7 @@ class MRCNN(tf.keras.Model):
             model_outputs.update({
                 'rpn_score_outputs': rpn_score_outputs,
                 'rpn_box_outputs': rpn_box_outputs})
-        box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
+        box_targets, class_targets, rpn_box_rois, proposal_to_label_map, target_weights = \
             self.roi_generator(rpn_score_outputs, rpn_box_outputs, params, 
                                image_height, image_width, features['image_info'], 
                                labels, is_training=is_training)
@@ -145,7 +145,8 @@ class MRCNN(tf.keras.Model):
             model_outputs.update({
                 'class_targets': class_targets,
                 'box_rois': rpn_box_rois,
-                'box_targets': box_targets
+                'box_targets': box_targets,
+                'target_weights': target_weights
             })
         bbox_outputs = self.box_roi_head(fpn_feats, rpn_box_rois, box_targets, class_targets, params, 
                                           features['image_info'], is_gpu_inference, is_training)
@@ -226,18 +227,19 @@ class MRCNN(tf.keras.Model):
             rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
 
             # Sampling
-            box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
+            box_targets, class_targets, rpn_box_rois, proposal_to_label_map, class_weights = \
             training_ops.proposal_label_op(
                 rpn_box_rois,
                 labels['gt_boxes'],
                 labels['gt_classes'],
+                labels['gt_weights'],
                 batch_size_per_im=params['batch_size_per_im'],
                 fg_fraction=params['fg_fraction'],
                 fg_thresh=params['fg_thresh'],
                 bg_thresh_hi=params['bg_thresh_hi'],
                 bg_thresh_lo=params['bg_thresh_lo']
             )
-        return box_targets, class_targets, rpn_box_rois, proposal_to_label_map
+        return box_targets, class_targets, rpn_box_rois, proposal_to_label_map, class_weights
     
     def box_roi_head(self, fpn_feats, rpn_box_rois, box_targets, class_targets,
                      params, image_info, is_gpu_inference, is_training=True):
