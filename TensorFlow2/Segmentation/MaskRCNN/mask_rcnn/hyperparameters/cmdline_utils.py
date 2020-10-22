@@ -237,6 +237,8 @@ def define_hparams_flags():
     )
 
     flags.DEFINE_bool('xla', default=False, help='Enable XLA JIT Compiler.')
+    
+    flags.DEFINE_bool('use_weights', default=False, help='Weights for losses.')
 
     flags.DEFINE_string('training_file_pattern', default="", help='TFRecords file pattern for the training files')
 

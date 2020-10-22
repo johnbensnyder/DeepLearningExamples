@@ -31,7 +31,7 @@ from mask_rcnn.object_detection import balanced_positive_negative_sampler
 _EPSILON = 1e-8
 
 
-def _add_class_assignments(iou, gt_boxes, gt_labels):
+def _add_class_assignments(iou, gt_boxes, gt_labels, weights=None):
     """Computes object category assignment for each box.
 
   Args:
@@ -64,6 +64,11 @@ def _add_class_assignments(iou, gt_boxes, gt_labels):
         )
 
         max_classes = tf.reshape(tf.gather(tf.reshape(gt_labels, [-1, 1]), indices), [batch_size, -1])
+        
+        if weights==None:
+            max_weights = tf.ones(tf.shape(max_classes))
+        else:
+            max_weights = tf.reshape(tf.gather(tf.reshape(weights, [-1, 1]), indices), [batch_size, -1])
 
         max_overlap = tf.reduce_max(input_tensor=iou, axis=2)
 
@@ -82,7 +87,7 @@ def _add_class_assignments(iou, gt_boxes, gt_labels):
             max_boxes
         )
 
-    return max_boxes, max_classes, max_overlap, argmax_iou
+    return max_boxes, max_classes, max_overlap, argmax_iou, max_weights
 
 
 def encode_box_targets(boxes, gt_boxes, gt_labels, bbox_reg_weights):
@@ -96,7 +101,7 @@ def encode_box_targets(boxes, gt_boxes, gt_labels, bbox_reg_weights):
     return box_targets
 
 
-def proposal_label_op(boxes, gt_boxes, gt_labels,
+def proposal_label_op(boxes, gt_boxes, gt_labels, weights=None,
                       batch_size_per_im=512, fg_fraction=0.25, fg_thresh=0.5,
                       bg_thresh_hi=0.5, bg_thresh_lo=0.):
     """Assigns the proposals with ground truth labels and performs subsmpling.
@@ -154,7 +159,7 @@ def proposal_label_op(boxes, gt_boxes, gt_labels,
         iou = box_utils.bbox_overlap(boxes, gt_boxes)
 
         (pre_sample_box_targets, pre_sample_class_targets, max_overlap,
-         proposal_to_label_map) = _add_class_assignments(iou, gt_boxes, gt_labels)
+         proposal_to_label_map, pre_sample_class_weights) = _add_class_assignments(iou, gt_boxes, gt_labels, weights)
 
         # Generates a random sample of RoIs comprising foreground and background
         # examples.
@@ -170,6 +175,12 @@ def proposal_label_op(boxes, gt_boxes, gt_labels,
             negatives,
             tf.zeros_like(pre_sample_class_targets),
             pre_sample_class_targets
+        )
+        
+        pre_sample_class_weights = tf.where(
+            negatives,
+            tf.zeros_like(pre_sample_class_weights),
+            pre_sample_class_weights
         )
 
         proposal_to_label_map = tf.where(
@@ -220,6 +231,11 @@ def proposal_label_op(boxes, gt_boxes, gt_labels,
             tf.gather(tf.reshape(pre_sample_class_targets, [-1, 1]), samples_indices),
             [batch_size, -1]
         )
+        
+        class_weights = tf.reshape(
+            tf.gather(tf.reshape(pre_sample_class_weights, [-1, 1]), samples_indices),
+            [batch_size, -1]
+        )
 
         sample_box_targets = tf.reshape(
             tf.gather(tf.reshape(pre_sample_box_targets, [-1, 4]), samples_indices),
@@ -231,10 +247,10 @@ def proposal_label_op(boxes, gt_boxes, gt_labels,
             [batch_size, -1]
         )
 
-    return sample_box_targets, class_targets, rois, sample_proposal_to_label_map
+    return sample_box_targets, class_targets, rois, sample_proposal_to_label_map, class_weights
 
 
-def select_fg_for_masks(class_targets, box_targets, boxes, proposal_to_label_map, max_num_fg=128):
+def select_fg_for_masks(class_targets, box_targets, boxes, proposal_to_label_map, max_num_fg=128, weights=None):
     """Selects the fore ground objects for mask branch during training.
 
     Args:
@@ -267,6 +283,14 @@ def select_fg_for_masks(class_targets, box_targets, boxes, proposal_to_label_map
         tf.gather(tf.reshape(class_targets, [-1, 1]), indices),
         [batch_size, -1]
     )
+    
+    if weights==None:
+        fg_weights = tf.ones(tf.shape(fg_class_targets))
+    else:
+        fg_weights = tf.reshape(
+            tf.gather(tf.reshape(weights, [-1, 1]), indices),
+            [batch_size, -1]
+        )
 
     fg_box_targets = tf.reshape(
         tf.gather(tf.reshape(box_targets, [-1, 4]), indices),
@@ -283,7 +307,7 @@ def select_fg_for_masks(class_targets, box_targets, boxes, proposal_to_label_map
     )
 
     return (fg_class_targets, fg_box_targets, fg_box_rois,
-            fg_proposal_to_label_map)
+            fg_proposal_to_label_map, fg_weights)
 
 
 def get_mask_targets(fg_boxes, fg_proposal_to_label_map, fg_box_targets, mask_gt_labels, output_size=28):

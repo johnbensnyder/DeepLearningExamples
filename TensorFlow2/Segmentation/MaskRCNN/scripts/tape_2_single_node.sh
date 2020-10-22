@@ -68,4 +68,5 @@ mkdir -p $BASEDIR/../baseline_1x
         --tf2 \
         --delay_masks \
         --xla \
+        --use_weights \
         --use_custom_box_proposals_op | tee $BASEDIR/../baseline_1x/baseline_1x.log

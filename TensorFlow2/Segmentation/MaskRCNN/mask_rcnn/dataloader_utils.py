@@ -30,6 +30,11 @@ from mask_rcnn.utils import coco_utils
 from mask_rcnn.ops import preprocess_ops
 
 from mask_rcnn.object_detection import tf_example_decoder
+from mask_rcnn.training.loss_weights import loss_weights
+loss_weights = {int(i):j for i,j in loss_weights.items()}
+loss_weights_table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(tf.constant(list(loss_weights.keys())),
+                                        tf.constant(list(loss_weights.values()))), -1)
 
 MAX_NUM_INSTANCES = 100
 MAX_NUM_VERTICES_PER_INSTANCE = 1500
@@ -164,6 +169,9 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None,
                     use_instance_mask=use_instance_mask
                 )
                 
+                weights = loss_weights_table.lookup(tf.cast(classes, tf.int32))
+                weights = preprocess_ops.pad_to_fixed_size(weights, -1, [MAX_NUM_INSTANCES, 1])
+                
                 image, image_info, boxes, instance_masks = preprocess_image(
                         image,
                         boxes=boxes,
@@ -214,6 +222,7 @@ def dataset_parser(value, mode, params, use_instance_mask, seed=None,
                 )
 
                 labels.update(additional_labels)
+                labels['gt_weights'] = weights
                 # labels["input_anchor"] = input_anchor
 
                 # Features

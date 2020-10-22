@@ -34,6 +34,11 @@ from absl import app
 import tensorflow as tf
 from tensorflow.python.framework.ops import disable_eager_execution
 from mask_rcnn.utils.herring_env import is_herring
+from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
+
+devices = tf.config.list_physical_devices('GPU')
+tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
+logical_devices = tf.config.list_logical_devices('GPU')
 
 if is_herring():
     import herring.tensorflow as herring

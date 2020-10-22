@@ -296,11 +296,12 @@ class MRCNN(tf.keras.Model):
             rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
 
             # Sampling
-            box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
+            box_targets, class_targets, rpn_box_rois, proposal_to_label_map, target_weights = \
             training_ops.proposal_label_op(
                 rpn_box_rois,
                 labels['gt_boxes'],
                 labels['gt_classes'],
+                labels['gt_weights'],
                 batch_size_per_im=params['batch_size_per_im'],
                 fg_fraction=params['fg_fraction'],
                 fg_thresh=params['fg_thresh'],
@@ -361,6 +362,7 @@ class MRCNN(tf.keras.Model):
                 'class_outputs': class_outputs,
                 'box_outputs': box_outputs,
                 'class_targets': class_targets,
+                'target_weights': target_weights,
                 'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
                 'box_rois': rpn_box_rois,
             })
@@ -376,12 +378,13 @@ class MRCNN(tf.keras.Model):
 
         else:
             selected_class_targets, selected_box_targets, \
-            selected_box_rois, proposal_to_label_map = training_ops.select_fg_for_masks(
+            selected_box_rois, proposal_to_label_map, fg_weights = training_ops.select_fg_for_masks(
                 class_targets=class_targets,
                 box_targets=box_targets,
                 boxes=rpn_box_rois,
                 proposal_to_label_map=proposal_to_label_map,
-                max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction'])
+                max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction']),
+                weights=target_weights,
             )
 
             class_indices = tf.cast(selected_class_targets, dtype=tf.int32)
@@ -419,6 +422,7 @@ class MRCNN(tf.keras.Model):
                 'mask_outputs': mask_outputs,
                 'mask_targets': mask_targets,
                 'selected_class_targets': selected_class_targets,
+                'selected_mask_weights': fg_weights,
             })
 
         else:
@@ -912,14 +916,16 @@ class TapeModel(object):
                     box_targets=model_outputs['box_targets'],
                     rpn_box_rois=model_outputs['box_rois'],
                     image_info=features['image_info'],
-                    params=self.params.values()
+                    params=self.params.values(),
+                    weights=model_outputs['target_weights'] if self.params.use_weights else 1.0,
                 )
             if self.params.include_mask:
                 loss_dict['mask_loss'] = losses.mask_rcnn_loss(
                     mask_outputs=model_outputs['mask_outputs'],
                     mask_targets=model_outputs['mask_targets'],
                     select_class_targets=model_outputs['selected_class_targets'],
-                    params=self.params.values()
+                    params=self.params.values(),
+                    mask_weights=model_outputs['selected_mask_weights'] if self.params.use_weights else 1.0,
                 )
             else:
                 loss_dict['mask_loss'] = 0.

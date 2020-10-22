@@ -8,6 +8,7 @@ os.environ['TF_ADJUST_HUE_FUSED'] = '1'
 os.environ['TF_ADJUST_SATURATION_FUSED'] = '1'
 os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 os.environ['TF_AUTOTUNE_THRESHOLD'] = '2'
+save_path = '/home/ubuntu/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/models'
 
 from mask_rcnn.utils.logging_formatter import logging
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
@@ -28,9 +29,9 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
             import horovod.tensorflow as hvd
             hvd.init()
             
-        devices = tf.config.list_physical_devices('GPU')
+        '''devices = tf.config.list_physical_devices('GPU')
         tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
-        logical_devices = tf.config.list_logical_devices('GPU')
+        logical_devices = tf.config.list_logical_devices('GPU')'''
 
     tf.config.optimizer.set_experimental_options({"auto_mixed_precision": run_config.amp})
     tf.config.optimizer.set_jit(run_config.xla)
@@ -54,6 +55,8 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
             if MPI_rank(is_herring())==0:
                 logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
             mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0)
+            if MPI_rank(is_herring())==0:
+                mrcnn_model.forward.save_weights(os.path.join(save_path, 'epoch_{}.h5'.format(epoch)))
             if MPI_rank(is_herring())==0:
                 logging.info("Running epoch {} evaluation".format(epoch+1))
             mrcnn_model.run_eval(run_config.eval_samples//eval_workers, async_eval=run_config.async_eval, 

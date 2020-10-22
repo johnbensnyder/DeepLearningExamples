@@ -71,7 +71,6 @@ class BNReLULayer(KerasMockLayer):
             trainable=self._trainable,
             gamma_initializer=gamma_initializer,
             fused=True,
-            name="batch_normalization"
         )
 
         if relu:
@@ -122,7 +121,6 @@ class GNReLULayer(KerasMockLayer):
             epsilon=1e-5,
             trainable=True,
             gamma_initializer=gamma_initializer,
-            name="group_normalization"
         )
 
         if relu:
@@ -205,7 +203,6 @@ class Conv2dFixedPadding(KerasMockLayer):
             kernel_initializer=tf.keras.initializers.VarianceScaling(),
             data_format=data_format,
             trainable=self._trainable,
-            name="conv2d"
         )
 
     def __call__(self, inputs, *args, **kwargs):
