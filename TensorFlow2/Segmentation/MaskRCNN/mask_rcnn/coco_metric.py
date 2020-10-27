@@ -409,7 +409,7 @@ def generate_segmentation_from_masks(masks,
   ref_boxes = expand_boxes(detected_boxes, scale)
   ref_boxes = ref_boxes.astype(np.int32)
   padded_mask = np.zeros((mask_height + 2, mask_width + 2), dtype=np.float32)
-  segms = np.zeros((image_height, image_width, len(masks)), dtype=np.uint8, order='F')
+  segms = np.zeros((image_height, image_width, len(masks)), dtype=np.uint8)
   for mask_ind, mask in enumerate(masks):
     im_mask = np.zeros((image_height, image_width), dtype=np.uint8, order='F')
     if is_image_mask:

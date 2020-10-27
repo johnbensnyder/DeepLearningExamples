@@ -47,7 +47,7 @@ from mask_rcnn import dataloader
 from mask_rcnn import distributed_executer
 from mask_rcnn import mask_rcnn_model as mask_rcnn_model_v1
 from mask_rcnn.tf2 import mask_rcnn_model as mask_rcnn_model_v2
-from mask_rcnn import session_executor
+#from mask_rcnn import session_executor
 from mask_rcnn import tape_executor
 from mask_rcnn.hyperparameters import mask_rcnn_params
 from mask_rcnn.hyperparameters import params_io
@@ -71,8 +71,8 @@ import numpy as np
 from tqdm import tqdm
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
 from mpi4py import MPI
-import horovod.tensorflow as hvd
-hvd.init()
+#import horovod.tensorflow as hvd
+#hvd.init()
 
 from mask_rcnn.tf2.mask_rcnn_model import SessionModel
 from mask_rcnn.hooks import pretrained_restore_hook
@@ -86,9 +86,6 @@ import h5py
 import time
 import multiprocessing as mp
 
-
-
-
 def get_latest_checkpoint(q, checkpoint_dir, model):
     encountered_checkpoints = set() 
     while True:
@@ -96,13 +93,15 @@ def get_latest_checkpoint(q, checkpoint_dir, model):
         if (latest is not None) and (len(q) == 0 or q[-1] != latest) and (latest not in encountered_checkpoints):
             q.append(latest)
             encountered_checkpoints.add(latest)
+            time.sleep(1)
         time.sleep(1)
 
 
 
 
 def do_eval(run_config, train_input_fn, eval_input_fn):
-
+    gpus = tf.config.list_physical_devices('GPU')
+    #print(tf.config.set_visible_devices(gpus))
     mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn, is_training=True)
     q = deque()
     out_path = run_config.model_dir

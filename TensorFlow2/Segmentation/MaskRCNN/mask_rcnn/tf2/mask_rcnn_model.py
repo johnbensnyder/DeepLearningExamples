@@ -35,7 +35,7 @@ import os
 
 import multiprocessing as mp
 import queue
-#mp.set_start_method('spawn')
+
 
 import h5py
 import tensorflow as tf
@@ -861,8 +861,13 @@ class TapeModel(object):
     def __init__(self, params, train_input_fn=None, eval_input_fn=None, is_training=True):
         self.params = params
 
-
-        self.forward = MRCNN(self.params.values(), is_training=is_training)
+        if(is_training):
+          self.strategy = tf.distribute.MirroredStrategy()
+          with self.strategy.scope():
+            self.forward = MRCNN(self.params.values(), is_training=is_training)
+        else:
+          self.forward = MRCNN(self.params.values(), is_training=is_training)
+          
         self.model_dir = self.params.model_dir
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
@@ -1123,6 +1128,7 @@ class TapeModel(object):
                 'image_info': features['image_info'],
             })
         return model_outputs
+        
     #@profile_dec
     def run_eval(self, steps, batches, async_eval=False, use_ext=False, use_dist_coco_eval=False):
         #steps = 5
@@ -1139,42 +1145,55 @@ class TapeModel(object):
         MPI.COMM_WORLD.barrier()
         start_total_infer = time.time()
         
-        in_q = mp.Queue()
-        out_q = mp.Queue()
-        stop_event = mp.Event()
-        stop_event.clear()
-        post_proc = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc2 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc3 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc.start()
-        post_proc2.start()
-        post_proc3.start()
+        with mp.Manager() as manager:
+        
+          in_q = manager.Queue()
+          out_q = manager.Queue()
+          stop_event = manager.Event()
+          stop_event.clear()
+          post_proc = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
+          post_proc2 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
+          #post_proc3 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
+          post_proc.start()
+          post_proc2.start()
+          #post_proc3.start()
 
-        #if MPI_rank(is_herring())==0:
-        #  tf.profiler.experimental.start('logdir')
+          #if MPI_rank(is_herring())==0:
+          #  tf.profiler.experimental.start('logdir')
 
-        for i in p_bar:
-            start = time.time()
-            features = batches[i]#next(self.eval_tdf)['features']
-            data_load_time = time.time()
-            data_load_total += data_load_time-start
-            
-            out = self.predict(features)
-            predict_time = time.time()
-            predict_total += predict_time - data_load_time
-            #Extract numpy from tensors
-            for key in out:
-              out[key] = out[key].numpy()
-            in_q.put(out)
-        stop_event.set()
-        #Should expect num threads items in queue
-        converted_predictions = out_q.get() + out_q.get() + out_q.get()
-        post_proc.join()
-        post_proc2.join()
-        post_proc3.join()
-        print("Q is empty ", in_q.empty())
-        #if MPI_rank(is_herring())==0:
-        #  tf.profiler.experimental.stop()
+          for i in p_bar:
+              start = time.time()
+              features = batches[i]#next(self.eval_tdf)['features']
+              data_load_time = time.time()
+              data_load_total += data_load_time-start
+              
+              #out = self.predict(features)
+              out = self.strategy.run(self.predict, args=(features,))
+              predict_time = time.time()
+              predict_total += predict_time - data_load_time
+              #Extract numpy from tensors
+              #for key in out:
+              #  out[key] = out[key].numpy()
+              #in_q.put(out)
+          #sleep long enough for a thread to check before setting stop event.
+          time.sleep(.6)
+          stop_event.set()
+          #Should expect num threads items in queue
+          converted_predictions = out_q.get() + out_q.get() #+ out_q.get()
+          #post_proc.join()
+          #post_proc2.join()
+          #post_proc3.join()
+          #print("Q is empty ", in_q.empty())
+          #post_proc.terminate()
+          #post_proc2.terminate()
+          #post_proc3.terminate()
+          #in_q.close()
+          #out_q.close()
+          #if MPI_rank(is_herring())==0:
+          #  tf.profiler.experimental.stop()
+
+          #del post_proc
+          #del post_proc2
 
         
         end_total_infer = time.time()
@@ -1187,11 +1206,11 @@ class TapeModel(object):
           end_gather_result = time.time()
           #with cProfile.Profile() as pr:
           if MPI_rank(is_herring()) == 0:
-              all_predictions = []
-              for i, p in enumerate(predictions_list):
-                  if i < 32:
-                      all_predictions.extend(p)
-              print(len(all_predictions), flush=True)
+              all_predictions = predictions_list
+              # all_predictions = []
+              # for i, p in enumerate(predictions_list):
+              #     all_predictions.extend(p)
+              # print(len(all_predictions), flush=True)
               if use_ext:
                   args = [all_predictions, validation_json_file, use_ext, False]
                   if async_eval:
@@ -1217,6 +1236,8 @@ class TapeModel(object):
         if(MPI_rank(is_herring()) == 0):
           print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
+
+        return
 
 #@profile_dec
 def coco_pre_process(in_q, out_q, finish_input):

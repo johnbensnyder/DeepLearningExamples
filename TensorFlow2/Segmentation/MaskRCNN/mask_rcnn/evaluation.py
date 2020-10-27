@@ -56,7 +56,7 @@ from pycocotools.cocoeval import COCOeval
 import multiprocessing as mp
 import cProfile, pstats
 
-#mp.set_start_method('spawn')
+
 
 def profile_dec(func):
   def wrapper(*args, **kwargs):
@@ -334,8 +334,26 @@ def gather_result_from_all_processes(local_results, root=0):
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
   size = comm.Get_size()
-  print(len(local_results), flush=True)
-  res = comm.gather(local_results, root=0)
+  res = []
+  if(False):
+    color = rank // 8
+    key = rank % 8
+    comm_intra = MPI.Comm.Split(comm, color, key)
+    res = comm_intra.gather(local_results)
+    if(key == 0):
+      res = sum(res, [])
+
+      new_group = list(range(0, size, 8))
+      new_group = comm.group.Incl(new_group)
+      inter_comm = comm.Create_group(new_group)
+      res = inter_comm.gather(res)
+      if(rank == 0):
+        res = sum(res, [])
+        print(len(res))
+  else:
+    res = comm.gather(local_results, root=0)
+    if(rank == 0):
+      res = sum(res, [])
   
   return res
 
@@ -663,10 +681,6 @@ def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     print(f"Prepocessing mask {preproc_end - start} coco c++ ext {time.time() - preproc_end}")
 
 def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
-    import pickle
-    with open("/tmp/coco_eval_b12", 'wb') as fp:
-      pickle.dump(predictions, fp)
-
     imgIds = []
     box_predictions = np.empty((len(predictions), 7))
     for ii, prediction in enumerate(predictions):
