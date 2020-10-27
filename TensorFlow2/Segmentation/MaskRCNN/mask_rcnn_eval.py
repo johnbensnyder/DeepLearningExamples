@@ -47,7 +47,7 @@ from mask_rcnn import dataloader
 from mask_rcnn import distributed_executer
 from mask_rcnn import mask_rcnn_model as mask_rcnn_model_v1
 from mask_rcnn.tf2 import mask_rcnn_model as mask_rcnn_model_v2
-#from mask_rcnn import session_executor
+from mask_rcnn import session_executor
 from mask_rcnn import tape_executor
 from mask_rcnn.hyperparameters import mask_rcnn_params
 from mask_rcnn.hyperparameters import params_io
@@ -109,23 +109,32 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
     eval_workers=min(32, MPI_size())
     batches = []
     total_samples = 0
+    img_ids = []
     while 1:
       try:
         batches.append(next(mrcnn_model.eval_tdf)['features'])
-        total_samples += batches[-1]['images'].shape[0]
+        total_samples += batches[-1]['images'].values[0].shape[0]
         #print(batches[-1]['images'].shape[0])
-
-      except Exception as e:
-        #Should only break when out of data
+        tmp = [list(x.numpy().flatten()) for x in batches[-1]['source_ids'].values]
+        img_ids += sum (tmp, [])
+      except tf.python.framework.errors_impl.OutOfRangeError: 
+        break
+      except StopIteration:
         break
     steps = len(batches)
     print(total_samples)
 
-    for ii in range(len(batches)):
-      tmpdict = {}
-      for key in batches[ii]:
-        tmpdict[key] = batches[ii][key].numpy()
-      batches[ii] = tmpdict
+    comm = MPI.COMM_WORLD
+    res = comm.gather(img_ids)
+    if(MPI_rank() == 0):
+      res = sum(res, [])
+      print(len(set(res)))
+
+    # for ii in range(len(batches)):
+    #   tmpdict = {}
+    #   for key in batches[ii]:
+    #     tmpdict[key] = batches[ii][key].numpy()
+    #   batches[ii] = tmpdict
     # import pickle
     # with open("/tmp/input_b37", 'wb') as fp:
     #   pickle.dump(batches, fp)

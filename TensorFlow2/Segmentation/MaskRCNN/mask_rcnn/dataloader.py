@@ -196,6 +196,7 @@ class InputReader(object):
                 logging.info("Using Evaluation Dataset Sharding with Horovod")
                 _shard_idx, _num_shards = MPI_rank_and_size()
                 max_shards = _num_shards
+                print(max_shards, _shard_idx)
                 try:
                     dataset = dataset.shard(
                         num_shards=max_shards,
@@ -212,7 +213,7 @@ class InputReader(object):
         if do_dist_eval and (self._mode == tf.estimator.ModeKeys.PREDICT or self._mode == tf.estimator.ModeKeys.EVAL):
           dataset = dataset.batch(
               batch_size=batch_size,
-              drop_remainder=False #For now we will drop. Huge accuracy drops at higher batches
+              drop_remainder=True #For now we will drop. Huge accuracy drops at higher batches
           )
         else:
           dataset = dataset.batch(
@@ -247,11 +248,11 @@ class InputReader(object):
             data_options = tf.data.Options()
 
             data_options.experimental_deterministic = seed is not None
-            if LooseVersion(tf.__version__) <= LooseVersion("2.0.0"):
-                data_options.experimental_distribute.auto_shard = False
-            else:
-                data_options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
-            # data_options.experimental_distribute.auto_shard = False
+            #if LooseVersion(tf.__version__) <= LooseVersion("2.0.0"):
+            #    data_options.experimental_distribute.auto_shard = False
+            #else:
+            #    data_options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+            data_options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
             data_options.experimental_slack = params['data_slack']
 
             data_options.experimental_threading.max_intra_op_parallelism = 1

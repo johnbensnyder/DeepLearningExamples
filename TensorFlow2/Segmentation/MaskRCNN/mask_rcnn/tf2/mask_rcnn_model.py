@@ -33,7 +33,7 @@ from mpi4py import MPI
 from tqdm import tqdm
 import os
 
-import multiprocessing as mp
+import multiprocessing.dummy as mp
 import queue
 
 
@@ -872,8 +872,10 @@ class TapeModel(object):
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
+        
         eval_params = dict(self.params.values(), batch_size=self.params.eval_batch_size)
-        self.eval_tdf = iter(eval_input_fn(eval_params)) \
+        self.eval_input_dt = self.strategy.experimental_distribute_dataset(eval_input_fn(eval_params))
+        self.eval_tdf = iter(self.eval_input_dt) \
                             if eval_input_fn else None
         self.optimizer, self.schedule = self.get_optimizer()
         self.epoch_num = 0
@@ -1035,7 +1037,7 @@ class TapeModel(object):
     
     def initialize_eval_model(self, features):
         for _ in range(5):
-          _ = self.predict(features)
+          _ = self.strategy.run(self.predict, args=(features,))
           
     def train_epoch(self, steps, broadcast=False, profile=None):
         if MPI_rank(is_herring())==0:
@@ -1145,55 +1147,74 @@ class TapeModel(object):
         MPI.COMM_WORLD.barrier()
         start_total_infer = time.time()
         
-        with mp.Manager() as manager:
         
-          in_q = manager.Queue()
-          out_q = manager.Queue()
-          stop_event = manager.Event()
-          stop_event.clear()
-          post_proc = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-          post_proc2 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-          #post_proc3 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-          post_proc.start()
-          post_proc2.start()
-          #post_proc3.start()
-
-          #if MPI_rank(is_herring())==0:
-          #  tf.profiler.experimental.start('logdir')
-
-          for i in p_bar:
-              start = time.time()
-              features = batches[i]#next(self.eval_tdf)['features']
-              data_load_time = time.time()
-              data_load_total += data_load_time-start
+        #with mp.Manager() as manager:
+        in_q = mp.Queue()
+        out_q = mp.Queue()
+        stop_event = mp.Event()
+        stop_event.clear()
+        proc_list = []
+        num_workers = 8*3
+        for ii in range(num_workers):
+          proc_list.append(mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event)))
+          proc_list[-1].start()
+        
+        
+        #if MPI_rank(is_herring())==0:
+        #  tf.profiler.experimental.start('logdir')
+        
+        for i in p_bar:
+            start = time.time()
+            features = batches[i]#next(self.eval_tdf)['features']
+            data_load_time = time.time()
+            data_load_total += data_load_time-start
+            #out = self.predict(features)
+            out = self.strategy.run(self.predict, args=(features,))
+            predict_time = time.time()
+            predict_total += predict_time - data_load_time
+            #Extract numpy from tensors
+            #for key in out:
+            #  out[key] = out[key].numpy()
+            #in_q.put(out)
+            out_l = [{}]*8
+            for key in out:
+              if(type(out[key]) == tf.python.framework.ops.EagerTensor):
+                if(key == 'source_id'):
+                  print(out[key])
+                vals = out[key]
+              else:
+                #print(key, len(out[key].values), out[key].values[0].numpy().shape)
+                vals = out[key].values
               
-              #out = self.predict(features)
-              out = self.strategy.run(self.predict, args=(features,))
-              predict_time = time.time()
-              predict_total += predict_time - data_load_time
-              #Extract numpy from tensors
-              #for key in out:
-              #  out[key] = out[key].numpy()
-              #in_q.put(out)
-          #sleep long enough for a thread to check before setting stop event.
-          time.sleep(.6)
-          stop_event.set()
-          #Should expect num threads items in queue
-          converted_predictions = out_q.get() + out_q.get() #+ out_q.get()
-          #post_proc.join()
-          #post_proc2.join()
-          #post_proc3.join()
-          #print("Q is empty ", in_q.empty())
-          #post_proc.terminate()
-          #post_proc2.terminate()
-          #post_proc3.terminate()
-          #in_q.close()
-          #out_q.close()
-          #if MPI_rank(is_herring())==0:
-          #  tf.profiler.experimental.stop()
+              for ii in range(len(vals)):
+                #if(key == 'source_id'):
+                #  out_l[ii][key] = [vals[ii].numpy()]
+                  #print(out_l[ii][key])
+                #else:
+                out_l[ii][key] = vals[ii].numpy()
+                  #print(out_l[ii][key].shape)
+            for each in out_l:
+              in_q.put(each)
+        #sleep long enough for a thread to check before setting stop event.
+        stop_event.set()
+        while(out_q.qsize() != num_workers):
+          print(out_q.qsize())
+          time.sleep(.5)
+        
 
-          #del post_proc
-          #del post_proc2
+        #Should expect num threads items in queue
+        converted_predictions = []
+        for ii in range(num_workers):
+          converted_predictions += out_q.get()
+
+        #in_q.join_thread()
+        for ii in range(num_workers):
+          proc_list[ii].join()
+        
+        #print("Q is empty ", in_q.empty())
+        
+        #if MPI_rank(is_herring())==0:
+        #  tf.profiler.experimental.stop()
 
         
         end_total_infer = time.time()
@@ -1248,7 +1269,7 @@ def coco_pre_process(in_q, out_q, finish_input):
       total_preproc = 0
       preproc_cnt = 0
       total_batches_processed = 0
-      while(not finish_input.is_set()):
+      while(not finish_input.is_set() or not in_q.empty()):
         try:
           out = in_q.get(timeout=0.5)
           start = time.time()
@@ -1283,6 +1304,7 @@ def coco_pre_process(in_q, out_q, finish_input):
           end_coco_load = time.time()
           total_preproc += end_coco_load - start
         except queue.Empty:
+          time.sleep(.5)
           pass
       print(not in_q.empty(), "Converted preds in mp ",len(converted_predictions), " ", total_batches_processed, flush=True)
       out_q.put(converted_predictions)
