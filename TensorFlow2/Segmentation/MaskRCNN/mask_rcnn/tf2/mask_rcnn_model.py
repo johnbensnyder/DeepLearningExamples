@@ -1130,6 +1130,12 @@ class TapeModel(object):
                 'source_id': features['source_ids'],
                 'image_info': features['image_info'],
             })
+
+        with tf.device('/CPU:0'):
+          for key in model_outputs:
+            model_outputs[key] = tf.identity(model_outputs[key])
+          
+
         return model_outputs
         
     @profile_dec
@@ -1163,13 +1169,13 @@ class TapeModel(object):
           proc_list[-1].start()
         
         
-        #if MPI_rank(is_herring())==0:
-        #  tf.profiler.experimental.start('logdir')
+        if MPI_rank(is_herring())==0:
+          tf.profiler.experimental.start('logdir')
         data_iter = iter(self.eval_input_dt)
         for i in p_bar:
             start = time.time()
-            #features = batches[i]#next(self.eval_tdf)['features']
-            features = next(data_iter)['features']
+            features = batches[i]#next(self.eval_tdf)['features']
+            #features = next(data_iter)['features']
             data_load_time = time.time()
             data_load_total += data_load_time-start
             #out = self.predict(features)
@@ -1181,10 +1187,12 @@ class TapeModel(object):
             #  out[key] = out[key].numpy()
             #in_q.put(out)
             prep_process = time.time()
-            out = self.strategy.experimental_local_results(out)[0]
-            for key in out:
-              out[key] = np.concatenate([x.numpy() for x in out[key].values])
-              #print(out[key].shape)
+            #out = self.strategy.experimental_local_results(out)[0]
+            with tf.device('/CPU:0'):
+              for key in out:
+                print(out[key].values[0].device)
+                out[key] = np.concatenate([tf.identity(x).numpy() for x in out[key].values])
+                #print(out[key].shape)
             in_q.put(out)
             process_total += time.time() - prep_process
         #sleep long enough for a thread to check before setting stop event.
@@ -1204,8 +1212,8 @@ class TapeModel(object):
         
         #print("Q is empty ", in_q.empty())
         
-        #if MPI_rank(is_herring())==0:
-        #  tf.profiler.experimental.stop()
+        if MPI_rank(is_herring())==0:
+          tf.profiler.experimental.stop()
 
         
         end_total_infer = time.time()
