@@ -963,7 +963,7 @@ class TapeModel(object):
 
 
     @tf.function
-    def train_step(self, features, labels, sync_weights=False, sync_opt=False):
+    def train_step(self, features, labels, sync_weights=False, sync_opt=False, apply_gradients=True):
         loss_dict = dict()
         with tf.GradientTape() as tape:
             model_outputs = self.forward(features, labels, self.params.values(), True)
@@ -1031,7 +1031,8 @@ class TapeModel(object):
                 grads_and_vars.append((grad, var))
 
             # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
-            self.optimizer.apply_gradients(grads_and_vars) 
+            if apply_gradients:
+                self.optimizer.apply_gradients(grads_and_vars) 
             if MPI_is_distributed(True) and sync_weights:
                 if MPI_rank(True)==0:
                     logging.info("Broadcasting variables")
@@ -1080,6 +1081,22 @@ class TapeModel(object):
         features, labels = next(self.train_tdf)
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
+        steps = 300
+        if MPI_rank(is_herring())==0:
+            logging.info("Initializing model")
+            p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
+        else:
+            p_bar = range(steps)
+
+        for i in p_bar:
+            if i == 0:
+                b_w, b_o = True, True
+            else:
+                b_w, b_o = False, False
+            features, labels = next(self.train_tdf)
+            b_w = tf.convert_to_tensor(b_w)
+            b_o = tf.convert_to_tensor(b_o)
+            loss_dict = self.train_step(features, labels, b_w, b_o, False)
     
     def initialize_eval_model(self, features):
         for _ in range(5):
