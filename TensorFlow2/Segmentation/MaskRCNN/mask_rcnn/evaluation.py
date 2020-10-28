@@ -698,7 +698,6 @@ def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     cocoDt = cocoGt.loadRes(box_predictions, use_ext=use_ext)
     cocoEval = COCOeval(cocoGt, cocoDt, iouType='bbox', use_ext=use_ext, num_threads=24)
     cocoEval.params.imgIds = imgIds
-    return
     cocoEval.evaluate(dist=use_dist_coco_eval)
     
     #Segm

@@ -97,8 +97,9 @@ def profile_dec(func):
   def wrapper(*args, **kwargs):
     with cProfile.Profile() as pr:
       ret = func(*args, **kwargs)
-      ps = pstats.Stats(pr).sort_stats('cumtime')
-      ps.print_stats()
+      if(MPI_rank() == 0):
+        ps = pstats.Stats(pr).sort_stats('cumtime')
+        ps.print_stats()
     return ret
   
   return wrapper
@@ -1131,7 +1132,7 @@ class TapeModel(object):
             })
         return model_outputs
         
-    #@profile_dec
+    @profile_dec
     def run_eval(self, steps, batches, async_eval=False, use_ext=False, use_dist_coco_eval=False):
         #steps = 5
         if MPI_rank(is_herring())==0:
@@ -1144,6 +1145,8 @@ class TapeModel(object):
         predict_total = 0
         process_total = 0
         append_total = 0
+        
+
         MPI.COMM_WORLD.barrier()
         start_total_infer = time.time()
         
@@ -1162,10 +1165,11 @@ class TapeModel(object):
         
         #if MPI_rank(is_herring())==0:
         #  tf.profiler.experimental.start('logdir')
-        
+        data_iter = iter(self.eval_input_dt)
         for i in p_bar:
             start = time.time()
-            features = batches[i]#next(self.eval_tdf)['features']
+            #features = batches[i]#next(self.eval_tdf)['features']
+            features = next(data_iter)['features']
             data_load_time = time.time()
             data_load_total += data_load_time-start
             #out = self.predict(features)
@@ -1176,29 +1180,16 @@ class TapeModel(object):
             #for key in out:
             #  out[key] = out[key].numpy()
             #in_q.put(out)
-            out_l = [{}]*8
+            prep_process = time.time()
+            out = self.strategy.experimental_local_results(out)[0]
             for key in out:
-              if(type(out[key]) == tf.python.framework.ops.EagerTensor):
-                if(key == 'source_id'):
-                  print(out[key])
-                vals = out[key]
-              else:
-                #print(key, len(out[key].values), out[key].values[0].numpy().shape)
-                vals = out[key].values
-              
-              for ii in range(len(vals)):
-                #if(key == 'source_id'):
-                #  out_l[ii][key] = [vals[ii].numpy()]
-                  #print(out_l[ii][key])
-                #else:
-                out_l[ii][key] = vals[ii].numpy()
-                  #print(out_l[ii][key].shape)
-            for each in out_l:
-              in_q.put(each)
+              out[key] = np.concatenate([x.numpy() for x in out[key].values])
+              #print(out[key].shape)
+            in_q.put(out)
+            process_total += time.time() - prep_process
         #sleep long enough for a thread to check before setting stop event.
         stop_event.set()
         while(out_q.qsize() != num_workers):
-          print(out_q.qsize())
           time.sleep(.5)
         
 
@@ -1255,7 +1246,7 @@ class TapeModel(object):
 
         end_coco_eval = time.time()
         if(MPI_rank(is_herring()) == 0):
-          print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
+          print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total}) prep ({process_total/steps}, {process_total}")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
 
         return

@@ -139,7 +139,7 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
     # with open("/tmp/input_b37", 'wb') as fp:
     #   pickle.dump(batches, fp)
     
-    mrcnn_model.initialize_eval_model(batches[0])
+    mrcnn_model.initialize_eval_model(next(iter(mrcnn_model.eval_input_dt))['features'])
    
     #if MPI_rank() == 0:
     chkpoint_thread = threading.Thread(target=get_latest_checkpoint, name="checkpoint thread", args=args)
