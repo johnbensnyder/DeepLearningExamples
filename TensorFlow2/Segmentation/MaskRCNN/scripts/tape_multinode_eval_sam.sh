@@ -37,7 +37,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
     -x LD_LIBRARY_PATH=/usr/local/cuda-10.1/lib64:/shared/conda/pkgs/cuda-toolkit/extras/CUPTI/lib64/:$LD_LIBRARY_PATH \
     -x PATH \
     -x RDMAV_FORK_SAFE=1 \
-    -x LD_PRELOAD= \
+    -x FI_PROVIDER="efa" \
     --bind-to none \
     --oversubscribe \
     bash launcher.sh \

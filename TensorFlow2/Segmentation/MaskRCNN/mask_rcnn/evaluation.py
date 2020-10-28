@@ -328,16 +328,26 @@ def compute_coco_eval_metric_1(predictor,
     print()  # Visual Spacing
     return eval_results, predictions
 
-def gather_result_from_all_processes(local_results, root=0):
+def gather_result_from_all_processes(local_results, hier_gather = False, root=0):
   
   from mpi4py import MPI
   comm = MPI.COMM_WORLD
   rank = comm.Get_rank()
   size = comm.Get_size()
-  print(len(local_results), flush=True)
-  res = comm.gather(local_results, root=0)
-  if(rank == 0):
-    res = sum(res, [])
+  if(hier_gather):
+    #8 GPUS per node
+    color = rank // 8
+    key = rank % 8
+    comm_intra = MPI.Comm.Split(comm, color, key)
+    res = comm_intra.gather(local_results)
+    if(key == 0):
+      res = sum(res, [])
+
+  else:
+    print(len(local_results), flush=True)
+    res = comm.gather(local_results, root=0)
+    if(rank == 0):
+      res = sum(res, [])
   return res
 
 def evaluate(eval_estimator,
@@ -665,6 +675,17 @@ def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
 
 def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     
+    if(not use_dist_coco_eval):
+      box_proc = mp.Process(target=coco_box_eval, args=(predictions, annotations_file,use_ext, use_dist_coco_eval))
+      mask_proc = mp.Process(target=coco_mask_eval, args=(predictions, annotations_file, use_ext, use_dist_coco_eval))
+      box_proc.start()
+      mask_proc.start()
+      box_proc.join()
+      mask_proc.join()
+
+      return
+    
+
     imgIds = []
     box_predictions = np.empty((len(predictions), 7))
     for ii, prediction in enumerate(predictions):

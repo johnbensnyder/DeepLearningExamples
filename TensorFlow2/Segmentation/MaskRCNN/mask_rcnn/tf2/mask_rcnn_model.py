@@ -57,7 +57,7 @@ from mask_rcnn.ops import training_ops
 
 from mask_rcnn.utils.logging_formatter import logging
 
-from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_local_rank, MPI_rank
+from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_local_rank, MPI_rank, MPI_rank_and_size
 from mask_rcnn import evaluation, coco_metric
 
 from mask_rcnn.utils.meters import StandardMeter
@@ -97,8 +97,9 @@ def profile_dec(func):
   def wrapper(*args, **kwargs):
     with cProfile.Profile() as pr:
       ret = func(*args, **kwargs)
-      ps = pstats.Stats(pr).sort_stats('cumtime')
-      ps.print_stats()
+      if(MPI_rank() == 0):
+        ps = pstats.Stats(pr).sort_stats('cumtime')
+        ps.print_stats()
     return ret
   
   return wrapper
@@ -1186,16 +1187,15 @@ class TapeModel(object):
           pass
         self.stop_event.clear()
         
-        #Should expect num threads items in queue
         converted_predictions = self.get_process_workers_results()
-        #self.join_process_workers()
-        #print("Q is empty ", self.in_q.empty())
-        #if MPI_rank(is_herring())==0:
-        #  tf.profiler.experimental.stop()
 
-        
         end_total_infer = time.time()
-        MPI.COMM_WORLD.barrier()
+        if(True):
+          predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = True)
+          if(MPI_rank() % 8 == 0):
+            print(len(predictions_list))
+        else:
+          MPI.COMM_WORLD.barrier()
         if(not use_dist_coco_eval):
           print(len(converted_predictions), flush=True)
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
@@ -1225,7 +1225,11 @@ class TapeModel(object):
         else:
           end_gather_result = time.time()
           validation_json_file=self.params.val_json_file
-          evaluation.fast_eval(converted_predictions, validation_json_file, use_ext, use_dist_coco_eval)
+          if(True):
+            if(MPI_rank() % 8 == 0):
+              evaluation.fast_eval(predictions_list, validation_json_file, use_ext, 2)
+          else:
+            evaluation.fast_eval(converted_predictions, validation_json_file, use_ext, use_dist_coco_eval)
 
         end_coco_eval = time.time()
         if(MPI_rank(is_herring()) == 0):
