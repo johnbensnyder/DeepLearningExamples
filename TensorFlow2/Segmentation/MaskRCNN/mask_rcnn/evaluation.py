@@ -674,7 +674,10 @@ def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     print(f"Prepocessing mask {preproc_end - start} coco c++ ext {time.time() - preproc_end}")
 
 def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
-    
+    # import pickle
+    # with open("/shared/sboshin/coco_eval", 'wb') as fp:
+    #   pickle.dump(predictions, fp)
+
     if(not use_dist_coco_eval):
       box_proc = mp.Process(target=coco_box_eval, args=(predictions, annotations_file,use_ext, use_dist_coco_eval))
       mask_proc = mp.Process(target=coco_mask_eval, args=(predictions, annotations_file, use_ext, use_dist_coco_eval))

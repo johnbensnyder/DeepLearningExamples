@@ -1190,7 +1190,7 @@ class TapeModel(object):
         converted_predictions = self.get_process_workers_results()
 
         end_total_infer = time.time()
-        if(True):
+        if(False):
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = True)
           if(MPI_rank() % 8 == 0):
             print(len(predictions_list))

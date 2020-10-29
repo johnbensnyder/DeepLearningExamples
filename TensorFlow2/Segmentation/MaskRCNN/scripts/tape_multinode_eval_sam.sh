@@ -31,8 +31,8 @@ BASE_LR=$(echo $GLOBAL_BATCH_SIZE*$LR_MULTIPLIER | bc)
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 /opt/amazon/openmpi/bin/mpirun --allow-run-as-root --tag-output -v --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/sboshin/eval_hosts \
-    -N 8 \
+    --hostfile /shared/sboshin/eval_hosts1x \
+    -N 1 \
     -x NCCL_DEBUG=VERSION \
     -x LD_LIBRARY_PATH=/usr/local/cuda-10.1/lib64:/shared/conda/pkgs/cuda-toolkit/extras/CUPTI/lib64/:$LD_LIBRARY_PATH \
     -x PATH \
@@ -69,5 +69,5 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
         --use_batched_nms \
         --use_ext \
         --use_custom_box_proposals_op \
-        --dist_coco_eval
+        #--dist_coco_eval
 
