@@ -155,10 +155,16 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
             last = q[0]
             q.popleft()
             print("#"*20, "Running eval for", last)
+            start_load = time.time()
             mrcnn_model.load_model(os.path.join(run_config.model_dir,last))
+            start_eval = time.time()
             mrcnn_model.run_eval(steps, batches, async_eval=run_config.async_eval,
                     use_ext=run_config.use_ext, use_dist_coco_eval=run_config.dist_coco_eval)
-        time.sleep(5)
+            end_eval = time.time()
+            if(MPI_rank() == 0 or MPI_rank() == 1):
+              print(f"Load model took {start_eval-start_load} Total eval took(load + eval) {end_eval - start_load}")
+            
+        time.sleep(1)
 
 def main(argv):
     del argv  # Unused.

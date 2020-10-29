@@ -1163,8 +1163,8 @@ class TapeModel(object):
         predict_total = 0
         process_total = 0
         append_total = 0
-        MPI.COMM_WORLD.barrier()
         start_total_infer = time.time()
+        MPI.COMM_WORLD.barrier()
         self.stop_event.set()
         #if MPI_rank(is_herring())==0:
         #  tf.profiler.experimental.start('logdir')
@@ -1274,6 +1274,6 @@ def coco_pre_process(in_q, out_q, finish_input):
         #print(not in_q.empty(), "Converted preds in mp ",len(converted_predictions), " ", total_batches_processed, flush=True)
         out_q.put(converted_predictions)
         finish_input.wait()
-        
-        print(f"Time taken to process outputs {total_preproc/preproc_cnt}/{total_preproc}")
+        avg_proc = total_preproc/preproc_cnt if preproc_cnt > 0 else 0
+        print(f"Time taken to process outputs {avg_proc}/{total_preproc}")
       
