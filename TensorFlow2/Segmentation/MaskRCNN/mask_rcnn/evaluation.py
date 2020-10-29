@@ -668,6 +668,8 @@ def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     imgIds = []
     box_predictions = np.empty((len(predictions), 7))
     for ii, prediction in enumerate(predictions):
+      if('bbox' not in prediction):
+        print(prediction)
       imgIds.append(prediction['image_id'])
       box_predictions[ii,0] = prediction['image_id']
       box_predictions[ii,1:5] = prediction['bbox'][:4] 

@@ -33,7 +33,7 @@ from mpi4py import MPI
 from tqdm import tqdm
 import os
 
-import multiprocessing.dummy as mp
+import multiprocessing as mp
 import queue
 #mp.set_start_method('spawn')
 
@@ -1114,6 +1114,32 @@ class TapeModel(object):
             weights.append(file['weight'+str(i)][:])
         self.forward.set_weights(weights)
     
+    def setup_process_workers(self, num_workers):
+      self.process_workers = []
+      self.in_q = mp.Queue()
+      self.out_q = mp.Queue()
+      self.stop_event = mp.Event()
+      self.stop_event.set()
+      for each in range(num_workers):
+        tmp = mp.Process(target=coco_pre_process, args=(self.in_q, self.out_q, self.stop_event))
+        tmp.start()
+        self.process_workers.append(tmp)
+
+    def join_process_workers(self):
+      for proc in self.process_workers:
+        proc.join()
+
+    def get_process_workers_results(self):
+      while(self.out_q.qsize() < len(self.process_workers)):
+        #time.sleep(.5)
+        pass
+
+      res = []
+      for _ in self.process_workers:
+        res += self.out_q.get()
+      return res
+
+
     @tf.function            
     def predict(self, features):
         labels = None
@@ -1138,18 +1164,7 @@ class TapeModel(object):
         append_total = 0
         MPI.COMM_WORLD.barrier()
         start_total_infer = time.time()
-        
-        in_q = mp.Queue()
-        out_q = mp.Queue()
-        stop_event = mp.Event()
-        stop_event.clear()
-        post_proc = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc2 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc3 = mp.Process(target=coco_pre_process, args=(in_q, out_q, stop_event))
-        post_proc.start()
-        post_proc2.start()
-        post_proc3.start()
-
+        self.stop_event.set()
         #if MPI_rank(is_herring())==0:
         #  tf.profiler.experimental.start('logdir')
 
@@ -1165,18 +1180,16 @@ class TapeModel(object):
             #Extract numpy from tensors
             for key in out:
               out[key] = out[key].numpy()
-            in_q.put(out)
-        while(in_q.qsize() > 0):
-          time.sleep(.5)
-        stop_event.set()
-        while(out_q.qsize() < 3):
-          time.sleep(.5)
+            self.in_q.put(out)
+        while(self.in_q.qsize() > 0):
+          #time.sleep(.5)
+          pass
+        self.stop_event.clear()
+        
         #Should expect num threads items in queue
-        converted_predictions = out_q.get() + out_q.get() + out_q.get()
-        post_proc.join()
-        post_proc2.join()
-        post_proc3.join()
-        print("Q is empty ", in_q.empty())
+        converted_predictions = self.get_process_workers_results()
+        #self.join_process_workers()
+        #print("Q is empty ", self.in_q.empty())
         #if MPI_rank(is_herring())==0:
         #  tf.profiler.experimental.stop()
 
@@ -1224,48 +1237,38 @@ def coco_pre_process(in_q, out_q, finish_input):
       
       coco = coco_metric.MaskCOCO()
       #wait until event is set
-      converted_predictions = []
+      
       total_preproc = 0
       preproc_cnt = 0
       total_batches_processed = 0
-      while(not finish_input.is_set() or in_q.qsize() > 0):
-        try:
-          start = time.time()
-          out = in_q.get(timeout=0.5)
-          start_q = time.time()
-          preproc_cnt +=1
-          worker_predictions = {}
-          total_batches_processed += len(out['detection_scores'])
-          out = evaluation.process_prediction_for_eval_batch(out)
-          for k, v in out.items():
-              if k not in worker_predictions:
-                  worker_predictions[k] = [v]
-              else:
-                  worker_predictions[k].append(v)
-          for k, v in worker_predictions.items():
-              worker_predictions[k] = np.concatenate(v, axis=0)
-          #print(len(worker_predictions), flush=True)
-          # score_threshold = .2
-          # print(out['detection_scores'].shape, flush=True)
-          
-          # for ii in range(len(out['detection_scores'])):
-          #   thold = out['detection_scores'][ii] > score_threshold
-          #   thold_shape = out['detection_scores'][ii].shape
-          #   for key in out:
-          #     print(out[key][ii].shape, thold_shape)
-          #     if(out[key][ii].shape != thold_shape):
-          #       print(key)
-          #       continue
-          #     out[key][ii] = out[key][ii][thold]
-          
-          # print("POST",out['detection_scores'].shape, flush=True)
-
-          converted_predictions += coco.load_predictions(worker_predictions, include_mask=True, is_image_mask=False)
-          end_coco_load = time.time()
-          total_preproc += end_coco_load - start
-        except queue.Empty:
-          pass
-      print(not in_q.empty(), "Converted preds in mp ",len(converted_predictions), " ", total_batches_processed, flush=True)
-      out_q.put(converted_predictions)
-      #print(f"Time taken to process outputs {total_preproc/preproc_cnt}/{total_preproc}")
-      return
+      while(True):
+        converted_predictions = []
+        while(finish_input.is_set() or in_q.qsize() > 0):
+          try:
+            start = time.time()
+            out = in_q.get(timeout=0.5)
+            start_q = time.time()
+            preproc_cnt +=1
+            worker_predictions = {}
+            total_batches_processed += len(out['detection_scores'])
+            out = evaluation.process_prediction_for_eval_batch(out)
+            for k, v in out.items():
+                if k not in worker_predictions:
+                    worker_predictions[k] = [v]
+                else:
+                    worker_predictions[k].append(v)
+            for k, v in worker_predictions.items():
+                worker_predictions[k] = np.concatenate(v, axis=0)
+            
+            converted_predictions += coco.load_predictions(worker_predictions, include_mask=True, is_image_mask=False)
+            end_coco_load = time.time()
+            total_preproc += end_coco_load - start
+          except queue.Empty:
+            time.sleep(.5)
+            pass
+        #print(not in_q.empty(), "Converted preds in mp ",len(converted_predictions), " ", total_batches_processed, flush=True)
+        out_q.put(converted_predictions)
+        finish_input.wait()
+        
+        print(f"Time taken to process outputs {total_preproc/preproc_cnt}/{total_preproc}")
+      
