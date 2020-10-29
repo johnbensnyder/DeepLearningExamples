@@ -1190,9 +1190,10 @@ class TapeModel(object):
         converted_predictions = self.get_process_workers_results()
 
         end_total_infer = time.time()
-        if(True):
-          predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = True)
-          if(MPI_rank() % 8 == 0):
+        if(not use_dist_coco_eval or use_dist_coco_eval == 2):
+          hier_gather = use_dist_coco_eval == 2
+          predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = hier_gather)
+          if(hier_gather and MPI_rank() % 8 == 0):
             print(len(predictions_list))
         else:
           MPI.COMM_WORLD.barrier()
@@ -1225,14 +1226,14 @@ class TapeModel(object):
         else:
           end_gather_result = time.time()
           validation_json_file=self.params.val_json_file
-          if(True):
-            if(MPI_rank() % 8 == 0):
+          if(use_dist_coco_eval == 2):
+            if(MPI_rank() % 8 == 0 or MPI_rank() % 8 == 1):
               evaluation.fast_eval(predictions_list, validation_json_file, use_ext, 2)
           else:
             evaluation.fast_eval(converted_predictions, validation_json_file, use_ext, use_dist_coco_eval)
 
         end_coco_eval = time.time()
-        if(MPI_rank(is_herring()) == 0):
+        if(MPI_rank(is_herring()) == 0 or MPI_rank(is_herring()) == 1):
           print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
 

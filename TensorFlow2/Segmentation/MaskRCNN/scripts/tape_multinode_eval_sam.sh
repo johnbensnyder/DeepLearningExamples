@@ -40,6 +40,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
     -x FI_PROVIDER="efa" \
     --bind-to none \
     --oversubscribe \
+    -output-filename "../results_tape_1x/mpiout/log" \
     bash launcher.sh \
     /shared/sboshin/conda/bin/python ${BASEDIR}/../mask_rcnn_eval.py \
         --mode="train_and_eval" \
@@ -69,5 +70,5 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
         --use_batched_nms \
         --use_ext \
         --use_custom_box_proposals_op \
-        --dist_coco_eval
+        --dist_coco_eval=2 \
 
