@@ -60,7 +60,9 @@ def dataset_parser(value,
                    params,
                    use_instance_mask,
                    seed=None,
-                   regenerate_source_id=False):
+                   regenerate_source_id=False,
+                   data_mode="train"):
+                
   """Parse data to a fixed dimension input image and learning targets.
     Args:
     value: A dictionary contains an image and groundtruth annotations.
@@ -108,6 +110,7 @@ def dataset_parser(value,
         use_instance_mask=use_instance_mask,
         regenerate_source_id=regenerate_source_id,
         append_original=False,
+        data_mode=data_mode,
         preprocessed=params["preprocessed_data"] and mode == tf.estimator.ModeKeys.TRAIN)
 
   example_decoder = create_example_decoder()

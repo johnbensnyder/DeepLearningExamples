@@ -254,6 +254,11 @@ def define_hparams_flags():
         help='Use GenerateBoundingBoxProposals op.'
     )
 
+    flags.DEFINE_bool(
+        'use_custom_box_proposals_op_batched',
+        default=False,
+        help='Use GenerateBoundingBoxProposals op.'
+    )
     flags.DEFINE_bool('use_fake_data', False, 'Use fake input.')
 
     flags.DEFINE_bool(
@@ -273,6 +278,7 @@ def define_hparams_flags():
     flags.DEFINE_string('training_file_pattern', default="", help='TFRecords file pattern for the training files')
 
     flags.DEFINE_string('validation_file_pattern', default="", help='TFRecords file pattern for the validation files')
+    flags.DEFINE_string('warmup_file_pattern', default="", help='TFRecords file pattern for the validation files')
 
     flags.DEFINE_string('val_json_file', default="", help='Filepath for the validation json file')
 

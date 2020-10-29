@@ -303,7 +303,18 @@ class MRCNN(tf.keras.Model):
             rpn_post_nms_topn = params['test_rpn_post_nms_topn']
             rpn_nms_threshold = params['test_rpn_nms_thresh']
 
-        if params['use_custom_box_proposals_op']:
+        if params['use_custom_box_proposals_op_batched']:
+            rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois_batched(
+                scores_outputs=rpn_score_outputs,
+                box_outputs=rpn_box_outputs,
+                all_anchors=all_anchors,
+                image_info=features['image_info'],
+                rpn_pre_nms_topn=rpn_pre_nms_topn,
+                rpn_post_nms_topn=rpn_post_nms_topn,
+                rpn_nms_threshold=rpn_nms_threshold,
+                rpn_min_size=params['rpn_min_size']
+            )
+        elif params['use_custom_box_proposals_op']:
             rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
                 scores_outputs=rpn_score_outputs,
                 box_outputs=rpn_box_outputs,
@@ -895,7 +906,7 @@ class SessionModel(object):
     
 class TapeModel(object):
     
-    def __init__(self, params, train_input_fn=None, eval_input_fn=None, is_training=True):
+    def __init__(self, params, train_input_fn=None, eval_input_fn=None, warmup_input_fn=None, is_training=True):
         self.params = params
 
 
@@ -904,6 +915,10 @@ class TapeModel(object):
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
+        warmup_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
+        self.warmup_tdf = iter(warmup_input_fn(warmup_params)) \
+                            if warmup_input_fn else None
+        
         eval_params = dict(self.params.values(), batch_size=self.params.eval_batch_size)
         self.eval_tdf = iter(eval_input_fn(eval_params)) \
                             if eval_input_fn else None
@@ -914,7 +929,7 @@ class TapeModel(object):
         if MPI_rank() == 0 and self.params.mode == "train_and_eval":
             converge_thread = threading.Thread(target=self.convergence_checker,
                                             name="convergence_checker_thread")
-            converge_thread.start()
+            #converge_thread.start()
 
 
     def convergence_checker(self):
@@ -1082,21 +1097,27 @@ class TapeModel(object):
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
         steps = 300
-        if MPI_rank(is_herring())==0:
-            logging.info("Initializing model")
-            p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
-        else:
-            p_bar = range(steps)
 
-        for i in p_bar:
-            if i == 0:
-                b_w, b_o = True, True
-            else:
-                b_w, b_o = False, False
-            features, labels = next(self.train_tdf)
-            b_w = tf.convert_to_tensor(b_w)
-            b_o = tf.convert_to_tensor(b_o)
-            loss_dict = self.train_step(features, labels, b_w, b_o, False)
+        b_w = tf.convert_to_tensor(True)
+        b_o = tf.convert_to_tensor(True)
+        loss_dict = self.train_step(features, labels, b_w, b_o)
+        prediction = self.predict(features)
+        #if MPI_rank(is_herring())==0:
+        #    logging.info("Initializing model")
+        #    p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
+        #else:
+        #    p_bar = range(steps)
+
+        #for i in p_bar:
+        #    if i == 0:
+        #        b_w, b_o = True, True
+        #    else:
+        #        b_w, b_o = False, False
+        #    features, labels = next(self.warmup_tdf)
+        #    b_w = tf.convert_to_tensor(b_w)
+        #    b_o = tf.convert_to_tensor(b_o)
+        #    loss_dict = self.train_step(features, labels, b_w, b_o, True)
+        #self.load_weights()
     
     def initialize_eval_model(self, features):
         for _ in range(5):
@@ -1137,7 +1158,7 @@ class TapeModel(object):
         else:
             runtype="TrainStep"
             for i in p_bar:
-                if i == 5 and self.epoch_num == 0:
+                if i == 1 and self.epoch_num == 0:
                     self.st = time.time()
                 if broadcast and i==0:
                     b_w, b_o = True, True
@@ -1163,7 +1184,7 @@ class TapeModel(object):
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[500:])*1000.} +/- {np.std(times[500:])*1000.} ms")
         if MPI_rank(is_herring()) == 0:
-            if self.epoch_num == 16:
+            if self.epoch_num == 15:
                 print(f'Total time is {time.time() - self.st}')
             #print(f'average step time={np.mean(timings[10:])} +/- {np.std(timings[10:])}')
             print("Saving checkpoint...")
