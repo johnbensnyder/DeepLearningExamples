@@ -26,6 +26,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_op=0,executor=0'
 # os.environ["TF_XLA_FLAGS"] = 'tf_xla_print_cluster_outputs=1'
+os.environ["TF_XLA_FLAGS"] = '--tf_xla_enable_lazy_compilation=false --tf_xla_min_cluster_size=5'
 
 from absl import app
 
