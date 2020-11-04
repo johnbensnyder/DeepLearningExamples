@@ -1279,12 +1279,21 @@ class TapeModel(object):
           validation_json_file=self.params.val_json_file
           if(use_dist_coco_eval == 2):
             if(MPI_rank() % 8 == 0 or MPI_rank() % 8 == 1):
-              evaluation.fast_eval(predictions_list, self.cocoGt, use_ext, 2)
+              scores = evaluation.fast_eval(predictions_list, self.cocoGt, use_ext, 2)
           else:
             evaluation.fast_eval(converted_predictions, self.cocoGt, use_ext, use_dist_coco_eval)
 
         end_coco_eval = time.time()
         if(MPI_rank(is_herring()) == 0 or MPI_rank(is_herring()) == 1):
+          #Rank 0 is bbox, Rank 1 is Segm
+          if(MPI_rank(is_herring()) == 0):
+            if scores[0] > 0.377:
+              print("#"*20, "BBOX CONVERGED")
+              open('/shared/rejin/b_converged', 'a').close()
+          if(MPI_rank(is_herring()) == 1):
+            if scores[1] > 0.339:
+              print("#"*20, "SEGM CONVERGED")
+              open('/shared/rejin/s_converged', 'a').close()
           print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
 

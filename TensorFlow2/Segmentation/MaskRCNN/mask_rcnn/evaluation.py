@@ -691,7 +691,7 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
       coco_box_eval(box_predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds)
       coco_mask_eval(predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds)
     else:
-
+      scores = [0,0]
       if(MPI_rank() % 8 == 0):
       #BBox
         cocoDt = cocoGt.loadRes(box_predictions, use_ext=use_ext)
@@ -700,7 +700,7 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
         cocoEval.evaluate(dist=use_dist_coco_eval)
         if(MPI_rank() == 0):
           logging.info("Bbox Summary")
-          cocoEval.summarize()
+          scores[0] = cocoEval.summarize()
       
       if(use_dist_coco_eval > 1):
         use_dist_coco_eval +=1
@@ -713,7 +713,7 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
         scocoEval.evaluate(dist=use_dist_coco_eval)
         if(MPI_rank() == 1):
           logging.info("Segm Summary")
-          scocoEval.summarize()
+          scores[1] = scocoEval.summarize()
     #print(f"Preproc time {preproc_time - start}")      
-    return
+    return scores
   
