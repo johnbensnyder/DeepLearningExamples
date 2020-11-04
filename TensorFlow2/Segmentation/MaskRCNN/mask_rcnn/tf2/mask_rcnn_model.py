@@ -1196,18 +1196,13 @@ class TapeModel(object):
         converted_predictions = self.get_process_workers_results()
 
         end_total_infer = time.time()
-        print(1193)
         if(not use_dist_coco_eval or use_dist_coco_eval == 2):
-          print("no coco")
           hier_gather = use_dist_coco_eval == 2
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = hier_gather)
-          if(hier_gather and MPI_rank() % 8 == 0):
-            print(len(predictions_list))
         else:
           MPI.COMM_WORLD.barrier()
         
         if(not use_dist_coco_eval):
-          print(len(converted_predictions), flush=True)
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
           
           validation_json_file=self.params.val_json_file
@@ -1265,15 +1260,7 @@ def coco_pre_process(in_q, out_q, finish_input):
             worker_predictions = {}
             total_batches_processed += len(out['detection_scores'])
             out = evaluation.process_prediction_for_eval_batch(out)
-            for k, v in out.items():
-                if k not in worker_predictions:
-                    worker_predictions[k] = [v]
-                else:
-                    worker_predictions[k].append(v)
-            for k, v in worker_predictions.items():
-                worker_predictions[k] = np.concatenate(v, axis=0)
-            
-            converted_predictions += coco.load_predictions(worker_predictions, include_mask=True, is_image_mask=False)
+            converted_predictions += coco.load_predictions(out, include_mask=True, is_image_mask=False)
             end_coco_load = time.time()
             total_preproc += end_coco_load - start
           except queue.Empty:
@@ -1282,5 +1269,5 @@ def coco_pre_process(in_q, out_q, finish_input):
         out_q.put(converted_predictions)
         finish_input.wait()
         avg_proc = total_preproc/preproc_cnt if preproc_cnt > 0 else 0
-        print(f"Time taken to process outputs {avg_proc}/{total_preproc}")
+        #print(f"Time taken to process outputs {avg_proc}/{total_preproc}")
       

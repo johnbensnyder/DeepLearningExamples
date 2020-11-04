@@ -643,7 +643,7 @@ def coco_box_eval(predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds):
     if(MPI_rank() == 0):
       cocoEval.accumulate()
       cocoEval.summarize()
-      print(f"coco c++ ext {time.time() - start}")
+      #print(f"coco c++ ext {time.time() - start}")
 
 #@profile_dec 
 def coco_mask_eval(predictions, segm_cnts, cocoGt, use_ext, use_dist_coco_eval, imgIds):
@@ -656,7 +656,7 @@ def coco_mask_eval(predictions, segm_cnts, cocoGt, use_ext, use_dist_coco_eval, 
     if(MPI_rank() == 0):
       cocoEval.accumulate()
       cocoEval.summarize()
-      print(f"coco c++ ext {time.time() - start}")
+      #print(f"coco c++ ext {time.time() - start}")
 
 #@profile_dec
 def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
@@ -678,7 +678,7 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
       #prediction['segmentation']['counts'] = ext.CountsVec(prediction['segmentation']['counts'])
     
     imgIds = list(set(imgIds))
-    print(use_ext, use_dist_coco_eval, len(imgIds), len(predictions), flush=True)
+    #print(use_ext, use_dist_coco_eval, len(imgIds), len(predictions), flush=True)
     preproc_time = time.time()
     if(not use_dist_coco_eval):
       bbox_proc = mp.Process(target=coco_box_eval, args=(box_predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds))
@@ -699,7 +699,6 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
         cocoEval.params.imgIds = imgIds
         cocoEval.evaluate(dist=use_dist_coco_eval)
         if(MPI_rank() == 0):
-          cocoEval.accumulate()
           logging.info("Bbox Summary")
           cocoEval.summarize()
       
@@ -713,9 +712,8 @@ def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
         scocoEval.params.imgIds = imgIds
         scocoEval.evaluate(dist=use_dist_coco_eval)
         if(MPI_rank() == 1):
-          scocoEval.accumulate()
           logging.info("Segm Summary")
           scocoEval.summarize()
-    print(f"Preproc time {preproc_time - start}")      
+    #print(f"Preproc time {preproc_time - start}")      
     return
   
