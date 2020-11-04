@@ -1190,13 +1190,16 @@ class TapeModel(object):
         converted_predictions = self.get_process_workers_results()
 
         end_total_infer = time.time()
+        print(1193)
         if(not use_dist_coco_eval or use_dist_coco_eval == 2):
+          print("no coco")
           hier_gather = use_dist_coco_eval == 2
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions, hier_gather = hier_gather)
           if(hier_gather and MPI_rank() % 8 == 0):
             print(len(predictions_list))
         else:
           MPI.COMM_WORLD.barrier()
+        
         if(not use_dist_coco_eval):
           print(len(converted_predictions), flush=True)
           predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)

@@ -56,6 +56,8 @@ from pycocotools.cocoeval import COCOeval
 import multiprocessing as mp
 import cProfile, pstats
 
+import ext
+
 #mp.set_start_method('spawn')
 
 def profile_dec(func):
@@ -633,7 +635,6 @@ def get_image_summary(predictions, current_step, max_images=10):
 #@profile_dec 
 def coco_box_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds):
     start = time.time()
-    preproc_end = time.time()
     cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
     cocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
     cocoEval = COCOeval(cocoGt, cocoDt, iouType='bbox', use_ext=use_ext, num_threads=24)
@@ -642,12 +643,11 @@ def coco_box_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, im
     if(MPI_rank() == 0):
       cocoEval.accumulate()
       cocoEval.summarize()
-      print(f"Prepocessing box {preproc_end - start} coco c++ ext {time.time() - preproc_end}")
+      print(f"coco c++ ext {time.time() - start}")
 
 #@profile_dec 
 def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds):
     start = time.time()
-    preproc_end = time.time()
     cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
     cocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
     cocoEval = COCOeval(cocoGt, cocoDt, iouType='segm', use_ext=use_ext, num_threads=24)
@@ -656,13 +656,14 @@ def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, i
     if(MPI_rank() == 0):
       cocoEval.accumulate()
       cocoEval.summarize()
-      print(f"Prepocessing mask {preproc_end - start} coco c++ ext {time.time() - preproc_end}")
+      print(f"coco c++ ext {time.time() - start}")
 
+@profile_dec
 def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
     # import pickle
-    # with open("/shared/sboshin/coco_eval", 'wb') as fp:
+    # with open("/shared/sboshin/new_coco_eval", 'wb') as fp:
     #   pickle.dump(predictions, fp)
-
+    start = time.time()
     imgIds = []
     box_predictions = np.empty((len(predictions), 7))
     for ii, prediction in enumerate(predictions):
@@ -671,10 +672,11 @@ def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
       box_predictions[ii,1:5] = prediction['bbox'][:4] 
       box_predictions[ii, 5:]= [float(prediction['score']), prediction['category_id']]
       del prediction['bbox']
+      #prediction['segmentation']['counts'] = ext.CountsVec(prediction['segmentation']['counts'])
     
     imgIds = list(set(imgIds))
     print(use_ext, use_dist_coco_eval, len(imgIds), len(predictions), flush=True)
-
+    preproc_time = time.time()
     if(not use_dist_coco_eval):
       bbox_proc = mp.Process(target=coco_box_eval, args=(box_predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds))
       mask_proc = mp.Process(target=coco_mask_eval, args=(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds))
@@ -713,6 +715,6 @@ def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
           scocoEval.accumulate()
           logging.info("Segm Summary")
           scocoEval.summarize()
-        
+    print(f"Preproc time {preproc_time - start}")      
     return
   
