@@ -33,7 +33,7 @@ from mpi4py import MPI
 from tqdm import tqdm
 import os
 from pathlib import Path
-import multiprocessing.dummy as mp
+import multiprocessing as mp
 import queue
 #mp.set_start_method('spawn')
 import sys
