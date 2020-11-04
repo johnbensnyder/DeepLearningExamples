@@ -328,17 +328,12 @@ class MaskCOCO(COCO):
             int(detection_results['image_info'][i][4]),
             is_image_mask=is_image_mask
         )
-        #if(image_id == 397133):
-        encoded_masks = [maskUtils.encode_raw(segment) for segment in segments]
-        #else:
-        #  encoded_masks = [{}]*len(segments)
+        
+        encoded_masks = maskUtils.encode(segments)
         
       for box_index in range(int(detection_results['num_detections'][i])):
-        #if current_index % 1000 == 0:
-        #  logging.info('{}/{}'.format(current_index, num_detections))
-
+        
         current_index += 1
-        #if(detection_results['detection_scores'][i][box_index] >= threshold):
         prediction = {
             'image_id': int(image_id),
             'bbox': detection_results['detection_boxes'][i][box_index],#.tolist(),
@@ -350,15 +345,7 @@ class MaskCOCO(COCO):
         if include_mask:
           prediction['segmentation'] = encoded_masks[box_index]
           prediction['segmentation']['bbox'] = bboxes[box_index]
-          #prediction['segmentation']['counts'] = ext.CountsVec(prediction['segmentation']['counts'])
-          if(prediction['image_id'] == 397133 and prediction["category_id"] == 1):
-            #maskUtils.from_string(encoded_masks[box_index])
-            print(encoded_masks[box_index]['counts'])
-            print(encoded_masks[box_index]['size'])
-
-        #if(image_id == 139):
-        #  print(prediction['image_id'], prediction['category_id'], prediction['score'])
-        
+          
         predictions.append(prediction)
     return predictions
 
@@ -420,7 +407,7 @@ def generate_segmentation_from_masks(masks,
   ref_boxes = expand_boxes(detected_boxes, scale)
   ref_boxes = ref_boxes.astype(np.int32)
   padded_mask = np.zeros((mask_height + 2, mask_width + 2), dtype=np.float32)
-  segms = []#np.zeros((image_height, image_width, len(masks)), dtype=np.uint8, order='F')
+  segms = np.zeros((image_height, image_width, len(masks)), dtype=np.uint8, order='F')
   bboxes = []
   for mask_ind, mask in enumerate(masks):
     im_mask = np.zeros((image_height, image_width), dtype=np.uint8, order='F')
@@ -451,11 +438,11 @@ def generate_segmentation_from_masks(masks,
 
       im_mask[y_0:y_1, x_0:x_1] = mask[(y_0 - ref_box[1]):(y_1 - ref_box[1]), (
           x_0 - ref_box[0]):(x_1 - ref_box[0])]
-    segms.append(im_mask)
+    segms[:,:,mask_ind] = im_mask
     bboxes.append((x_0, y_0, x_1, y_1))
 
 
-  assert masks.shape[0] == len(segms)#segms.shape[2]
+  assert masks.shape[0] == segms.shape[2]
   return segms, bboxes
 
 def parallel_encode(segments, out_q):

@@ -70,6 +70,9 @@ from mask_rcnn.tf2.utils import warmup_scheduler, eager_mapping
 from mask_rcnn.utils.meters import StandardMeter
 from mask_rcnn.utils.metric_tracking import register_metric
 from mask_rcnn.utils.herring_env import is_herring
+
+from pycocotools.coco import COCO
+
 from tensorflow.python.profiler import profiler_v2 as tf_profiler
 from tensorflow.python.profiler.trace import Trace as prof_Trace
 try:
@@ -1032,6 +1035,9 @@ class TapeModel(object):
     def initialize_eval_model(self, features):
         for _ in range(5):
           _ = self.predict(features)
+
+        #Initialize the COCOGT as this doesn't change
+        self.cocoGt = COCO(annotation_file=self.params.val_json_file, use_ext=self.params.use_ext)
           
     def train_epoch(self, steps, broadcast=False, profile=None):
         if MPI_rank(is_herring())==0:
@@ -1209,9 +1215,8 @@ class TapeModel(object):
           #with cProfile.Profile() as pr:
           if MPI_rank(is_herring()) == 0:
               all_predictions = predictions_list
-              print(len(all_predictions), flush=True)
               if use_ext:
-                  args = [all_predictions, validation_json_file, use_ext, False]
+                  args = [all_predictions, self.cocoGt, use_ext, False]
                   if async_eval:
                       eval_thread = threading.Thread(target=evaluation.fast_eval,
                                                     name="eval-thread", args=args)
@@ -1231,9 +1236,9 @@ class TapeModel(object):
           validation_json_file=self.params.val_json_file
           if(use_dist_coco_eval == 2):
             if(MPI_rank() % 8 == 0 or MPI_rank() % 8 == 1):
-              evaluation.fast_eval(predictions_list, validation_json_file, use_ext, 2)
+              evaluation.fast_eval(predictions_list, self.cocoGt, use_ext, 2)
           else:
-            evaluation.fast_eval(converted_predictions, validation_json_file, use_ext, use_dist_coco_eval)
+            evaluation.fast_eval(converted_predictions, self.cocoGt, use_ext, use_dist_coco_eval)
 
         end_coco_eval = time.time()
         if(MPI_rank(is_herring()) == 0 or MPI_rank(is_herring()) == 1):
@@ -1272,7 +1277,6 @@ def coco_pre_process(in_q, out_q, finish_input):
             end_coco_load = time.time()
             total_preproc += end_coco_load - start
           except queue.Empty:
-            time.sleep(.5)
             pass
         #print(not in_q.empty(), "Converted preds in mp ",len(converted_predictions), " ", total_batches_processed, flush=True)
         out_q.put(converted_predictions)

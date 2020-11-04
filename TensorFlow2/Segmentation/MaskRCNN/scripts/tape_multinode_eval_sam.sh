@@ -70,5 +70,5 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
         --use_batched_nms \
         --use_ext \
         --use_custom_box_proposals_op \
-        #--dist_coco_eval=2 \
+        --dist_coco_eval=2 \
 

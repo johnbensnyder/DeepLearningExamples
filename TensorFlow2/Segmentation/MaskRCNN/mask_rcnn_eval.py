@@ -155,6 +155,7 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
             last = q[0]
             q.popleft()
             print("#"*20, "Running eval for", last)
+            time.sleep(1)
             start_load = time.time()
             mrcnn_model.load_model(os.path.join(run_config.model_dir,last))
             start_eval = time.time()

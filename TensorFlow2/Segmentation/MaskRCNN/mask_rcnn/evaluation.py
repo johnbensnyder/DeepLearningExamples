@@ -633,9 +633,9 @@ def get_image_summary(predictions, current_step, max_images=10):
     return summaries
 
 #@profile_dec 
-def coco_box_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds):
+def coco_box_eval(predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds):
     start = time.time()
-    cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
+    #cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
     cocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
     cocoEval = COCOeval(cocoGt, cocoDt, iouType='bbox', use_ext=use_ext, num_threads=24)
     cocoEval.params.imgIds = imgIds
@@ -646,10 +646,10 @@ def coco_box_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, im
       print(f"coco c++ ext {time.time() - start}")
 
 #@profile_dec 
-def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds):
+def coco_mask_eval(predictions, segm_cnts, cocoGt, use_ext, use_dist_coco_eval, imgIds):
     start = time.time()
-    cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
-    cocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
+    #cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
+    cocoDt = cocoGt.loadRes(predictions, use_ext=use_ext, segm_cnts = segm_cnts)
     cocoEval = COCOeval(cocoGt, cocoDt, iouType='segm', use_ext=use_ext, num_threads=24)
     cocoEval.params.imgIds = imgIds
     cocoEval.evaluate(dist = use_dist_coco_eval)
@@ -658,40 +658,40 @@ def coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, i
       cocoEval.summarize()
       print(f"coco c++ ext {time.time() - start}")
 
-@profile_dec
-def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
+#@profile_dec
+def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
     # import pickle
     # with open("/shared/sboshin/new_coco_eval", 'wb') as fp:
     #   pickle.dump(predictions, fp)
     start = time.time()
     imgIds = []
-    box_predictions = np.empty((len(predictions), 7))
+    segm_cnts = []
+    box_predictions = np.empty((len(predictions), 13))
     for ii, prediction in enumerate(predictions):
       imgIds.append(prediction['image_id'])
       box_predictions[ii,0] = prediction['image_id']
       box_predictions[ii,1:5] = prediction['bbox'][:4] 
-      box_predictions[ii, 5:]= [float(prediction['score']), prediction['category_id']]
-      del prediction['bbox']
+      box_predictions[ii, 5:7]= [float(prediction['score']), prediction['category_id']]
+      box_predictions[ii, 7:9] = prediction['segmentation']['size']
+      box_predictions[ii, 9:13] = prediction['segmentation']['bbox'][:4] 
+      segm_cnts.append(prediction['segmentation']['counts'])
       #prediction['segmentation']['counts'] = ext.CountsVec(prediction['segmentation']['counts'])
     
     imgIds = list(set(imgIds))
     print(use_ext, use_dist_coco_eval, len(imgIds), len(predictions), flush=True)
     preproc_time = time.time()
     if(not use_dist_coco_eval):
-      bbox_proc = mp.Process(target=coco_box_eval, args=(box_predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds))
-      mask_proc = mp.Process(target=coco_mask_eval, args=(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds))
+      bbox_proc = mp.Process(target=coco_box_eval, args=(box_predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds))
+      mask_proc = mp.Process(target=coco_mask_eval, args=(box_predictions, segm_cnts, cocoGt, use_ext, use_dist_coco_eval, imgIds))
       bbox_proc.start()
       mask_proc.start()
       bbox_proc.join()
       mask_proc.join()
     elif(use_dist_coco_eval == 1):
-      coco_box_eval(box_predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds)
-      coco_mask_eval(predictions, annotations_file, use_ext, use_dist_coco_eval, imgIds)
+      coco_box_eval(box_predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds)
+      coco_mask_eval(predictions, cocoGt, use_ext, use_dist_coco_eval, imgIds)
     else:
 
-      cocoGt = COCO(annotation_file=annotations_file, use_ext=use_ext)
-    
-      
       if(MPI_rank() % 8 == 0):
       #BBox
         cocoDt = cocoGt.loadRes(box_predictions, use_ext=use_ext)
@@ -707,7 +707,8 @@ def fast_eval(predictions, annotations_file, use_ext, use_dist_coco_eval):
         use_dist_coco_eval +=1
       #Segm
       if(MPI_rank() % 8 == 1):
-        scocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
+        #scocoDt = cocoGt.loadRes(predictions, use_ext=use_ext)
+        scocoDt = cocoGt.loadRes(box_predictions, use_ext=use_ext, segm_cnts = segm_cnts)
         scocoEval = COCOeval(cocoGt, scocoDt, iouType='segm', use_ext=use_ext, num_threads=24)
         scocoEval.params.imgIds = imgIds
         scocoEval.evaluate(dist=use_dist_coco_eval)
