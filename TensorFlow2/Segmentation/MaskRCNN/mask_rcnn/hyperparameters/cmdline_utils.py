@@ -156,9 +156,9 @@ def define_hparams_flags():
         )
     )
 
-    flags.DEFINE_bool(
+    flags.DEFINE_integer(
         'dist_coco_eval',
-        default=False,
+        default=0,
         help=('use distributed coco eval (must have aws pycocotools).'
         )
     )

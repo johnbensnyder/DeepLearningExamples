@@ -46,6 +46,8 @@ import threading
 
 import cProfile, pstats
 
+import ext
+
 def profile_dec(func):
   def wrapper(*args, **kwargs):
     with cProfile.Profile() as pr:
@@ -315,10 +317,11 @@ class MaskCOCO(COCO):
     num_detections = detection_results['detection_scores'].size
     threshold = 0
     current_index = 0
+    #print(detection_results['num_detections'].shape)
     for i, image_id in enumerate(detection_results['source_id']):
 
       if include_mask:
-        segments = generate_segmentation_from_masks(
+        segments, bboxes = generate_segmentation_from_masks(
             detection_results['detection_masks'][i],
             detection_results['detection_boxes'][i],
             int(detection_results['image_info'][i][3]),
@@ -327,13 +330,10 @@ class MaskCOCO(COCO):
         )
         
         encoded_masks = maskUtils.encode(segments)
-
+        
       for box_index in range(int(detection_results['num_detections'][i])):
-        if current_index % 1000 == 0:
-          logging.info('{}/{}'.format(current_index, num_detections))
-
+        
         current_index += 1
-        #if(detection_results['detection_scores'][i][box_index] >= threshold):
         prediction = {
             'image_id': int(image_id),
             'bbox': detection_results['detection_boxes'][i][box_index],#.tolist(),
@@ -344,7 +344,8 @@ class MaskCOCO(COCO):
 
         if include_mask:
           prediction['segmentation'] = encoded_masks[box_index]
-
+          prediction['segmentation']['bbox'] = bboxes[box_index]
+          
         predictions.append(prediction)
     return predictions
 
@@ -407,11 +408,16 @@ def generate_segmentation_from_masks(masks,
   ref_boxes = ref_boxes.astype(np.int32)
   padded_mask = np.zeros((mask_height + 2, mask_width + 2), dtype=np.float32)
   segms = np.zeros((image_height, image_width, len(masks)), dtype=np.uint8, order='F')
+  bboxes = []
   for mask_ind, mask in enumerate(masks):
     im_mask = np.zeros((image_height, image_width), dtype=np.uint8, order='F')
     if is_image_mask:
       # Process whole-image masks.
       im_mask[:, :] = mask[:, :]
+      x_0 = max(ref_box[0], 0)
+      x_1 = min(ref_box[2] + 1, image_width)
+      y_0 = max(ref_box[1], 0)
+      y_1 = min(ref_box[3] + 1, image_height)
     else:
       # Process mask inside bounding boxes.
       padded_mask[1:-1, 1:-1] = mask[:, :]
@@ -433,9 +439,11 @@ def generate_segmentation_from_masks(masks,
       im_mask[y_0:y_1, x_0:x_1] = mask[(y_0 - ref_box[1]):(y_1 - ref_box[1]), (
           x_0 - ref_box[0]):(x_1 - ref_box[0])]
     segms[:,:,mask_ind] = im_mask
+    bboxes.append((x_0, y_0, x_1, y_1))
+
 
   assert masks.shape[0] == segms.shape[2]
-  return segms
+  return segms, bboxes
 
 def parallel_encode(segments, out_q):
   encoded_masks = [
