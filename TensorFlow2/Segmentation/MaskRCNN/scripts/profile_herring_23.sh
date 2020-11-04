@@ -53,10 +53,10 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 	--use_carl_loss \
         --training_file_pattern="/scratch/precalc_masks_latest/train*.tfrecord" \
         --validation_file_pattern="/shared/data2/val*.tfrecord" \
+	--warmup_file_pattern="/shared/rejin/dummy_data/*" \
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \
         --xla \
         --tf2 \
-	--preprocessed_data=${PRECALC_DATASET} \
         --use_custom_box_proposals_op | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log

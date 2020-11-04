@@ -28,6 +28,7 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 
 /shared/sami/conda23/bin/herringrun -n 64 -c /shared/sami/conda23 \
     RUN_HERRING=1 \
+    ENABLE_NVTX_MARKERS=0 \
     /shared/sami/conda23/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
@@ -39,12 +40,12 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
-        --num_steps_per_eval=6000 \
+        --num_steps_per_eval=231 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.25 \
-	--warmup_steps=300 \
-        --total_steps=2000 \
+	--warmup_steps=1000 \
+        --total_steps=4138 \
         --l2_weight_decay=1.25e-3 \
 	--label_smoothing=0.1 \
         --train_batch_size=1 \

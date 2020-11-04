@@ -29,7 +29,7 @@ tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
 #tf.config.optimizer.set_jit(True)
 
 
-def train_and_eval(run_config, train_input_fn, eval_input_fn):
+def train_and_eval(run_config, train_input_fn, eval_input_fn, warmup_input_fn):
     
     if is_herring():
         import herring.tensorflow as herring
@@ -55,7 +55,7 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
     tf.config.optimizer.set_experimental_options({"auto_mixed_precision": run_config.amp})
     tf.config.optimizer.set_jit(run_config.xla)
     total_epochs = ceil(run_config.total_steps/run_config.num_steps_per_eval)
-    mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn)
+    mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn, warmup_input_fn)
     mrcnn_model.initialize_model()
     eval_workers = min(MPI_size(is_herring()), 32)
 

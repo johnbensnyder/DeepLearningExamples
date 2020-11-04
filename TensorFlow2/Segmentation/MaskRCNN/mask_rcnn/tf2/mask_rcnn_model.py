@@ -32,11 +32,11 @@ from math import ceil
 from mpi4py import MPI
 from tqdm import tqdm
 import os
-
-import multiprocessing as mp
+from pathlib import Path
+import multiprocessing.dummy as mp
 import queue
 #mp.set_start_method('spawn')
-
+import sys
 import h5py
 import tensorflow as tf
 import tensorflow_addons as tfa
@@ -308,7 +308,18 @@ class MRCNN(tf.keras.Model):
             rpn_post_nms_topn = params['test_rpn_post_nms_topn']
             rpn_nms_threshold = params['test_rpn_nms_thresh']
 
-        if params['use_custom_box_proposals_op']:
+        if params['use_custom_box_proposals_op_batched']:
+            rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois_batched(
+                scores_outputs=rpn_score_outputs,
+                box_outputs=rpn_box_outputs,
+                all_anchors=all_anchors,
+                image_info=features['image_info'],
+                rpn_pre_nms_topn=rpn_pre_nms_topn,
+                rpn_post_nms_topn=rpn_post_nms_topn,
+                rpn_nms_threshold=rpn_nms_threshold,
+                rpn_min_size=params['rpn_min_size']
+            )
+        elif params['use_custom_box_proposals_op']:
             rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
                 scores_outputs=rpn_score_outputs,
                 box_outputs=rpn_box_outputs,
@@ -354,7 +365,6 @@ class MRCNN(tf.keras.Model):
         # Performs multi-level RoIAlign.
         if params["use_default_roi_align"]:
             
-            print("#"*100, "using default roi align")
             box_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
                 features=fpn_feats,
                 boxes=rpn_box_rois,
@@ -362,7 +372,6 @@ class MRCNN(tf.keras.Model):
                 is_gpu_inference=is_gpu_inference
             )
         else:
-            print("#"*100, "using custom roi align")
             box_roi_features = spatial_transform_ops.custom_multilevel_crop_and_resize(
             features=fpn_feats,
             boxes=rpn_box_rois,
@@ -902,7 +911,7 @@ class SessionModel(object):
     
 class TapeModel(object):
     
-    def __init__(self, params, train_input_fn=None, eval_input_fn=None, is_training=True):
+    def __init__(self, params, train_input_fn=None, eval_input_fn=None, warmup_input_fn=None, is_training=True):
         self.params = params
 
 
@@ -911,12 +920,32 @@ class TapeModel(object):
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
+        warmup_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
+        self.warmup_tdf = iter(warmup_input_fn(warmup_params)) \
+                            if warmup_input_fn else None
+        
         eval_params = dict(self.params.values(), batch_size=self.params.eval_batch_size)
         self.eval_tdf = iter(eval_input_fn(eval_params)) \
                             if eval_input_fn else None
         self.optimizer, self.schedule = self.get_optimizer()
         self.epoch_num = 0
+        self.st = 0
 
+        if MPI_rank() == 0 and self.params.mode == "train_and_eval":
+            converge_thread = threading.Thread(target=self.convergence_checker,
+                                            name="convergence_checker_thread")
+            #converge_thread.start()
+
+
+    def convergence_checker(self):
+        my_file = Path("/shared/converged")
+        while True:
+            if my_file.is_file():
+                print("Convergence reached.")
+                print(f'Time taken is: {time.time() - self.st}')
+                sys.exit(0)
+            time.sleep(1)
+                
     def load_weights(self):
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)
         weights = [chkp.get_tensor(i) for i in eager_mapping.resnet_vars]
@@ -954,7 +983,7 @@ class TapeModel(object):
 
 
     @tf.function
-    def train_step(self, features, labels, sync_weights=False, sync_opt=False):
+    def train_step(self, features, labels, sync_weights=False, sync_opt=False, apply_gradients=True):
         loss_dict = dict()
         with tf.GradientTape() as tape:
             model_outputs = self.forward(features, labels, self.params.values(), True)
@@ -1022,7 +1051,8 @@ class TapeModel(object):
                 grads_and_vars.append((grad, var))
 
             # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
-            self.optimizer.apply_gradients(grads_and_vars) 
+            if apply_gradients:
+                self.optimizer.apply_gradients(grads_and_vars) 
             if MPI_is_distributed(True) and sync_weights:
                 if MPI_rank(True)==0:
                     logging.info("Broadcasting variables")
@@ -1071,6 +1101,28 @@ class TapeModel(object):
         features, labels = next(self.train_tdf)
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
+        steps = 300
+
+        b_w = tf.convert_to_tensor(True)
+        b_o = tf.convert_to_tensor(True)
+        loss_dict = self.train_step(features, labels, b_w, b_o)
+        prediction = self.predict(features)
+        #if MPI_rank(is_herring())==0:
+        #    logging.info("Initializing model")
+        #    p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
+        #else:
+        #    p_bar = range(steps)
+
+        #for i in p_bar:
+        #    if i == 0:
+        #        b_w, b_o = True, True
+        #    else:
+        #        b_w, b_o = False, False
+        #    features, labels = next(self.warmup_tdf)
+        #    b_w = tf.convert_to_tensor(b_w)
+        #    b_o = tf.convert_to_tensor(b_o)
+        #    loss_dict = self.train_step(features, labels, b_w, b_o, True)
+        #self.load_weights()
     
     def initialize_eval_model(self, features):
         for _ in range(5):
@@ -1087,7 +1139,6 @@ class TapeModel(object):
         else:
             p_bar = range(steps)
         times=[]
-        global st
         if MPI_rank(is_herring())==0 and profile is not None:
             logging.info(f"Saving profile to {profile}")
             tf_profiler.start(profile)
@@ -1115,8 +1166,8 @@ class TapeModel(object):
         else:
             runtype="TrainStep"
             for i in p_bar:
-                if i == 5 and self.epoch_num == 0:
-                    st = time.time()
+                if i == 1 and self.epoch_num == 0:
+                    self.st = time.time()
                 if broadcast and i==0:
                     b_w, b_o = True, True
                 elif i==0:
@@ -1141,8 +1192,8 @@ class TapeModel(object):
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[500:])*1000.} +/- {np.std(times[500:])*1000.} ms")
         if MPI_rank(is_herring()) == 0:
-            if self.epoch_num == 16:
-                print(f'Total time is {time.time() - st}')
+            if self.epoch_num == 15:
+                print(f'Total time is {time.time() - self.st}')
             #print(f'average step time={np.mean(timings[10:])} +/- {np.std(timings[10:])}')
             print("Saving checkpoint...")
             self.epoch_num+=1
@@ -1283,6 +1334,7 @@ class TapeModel(object):
           else:
             evaluation.fast_eval(converted_predictions, self.cocoGt, use_ext, use_dist_coco_eval)
 
+    
         end_coco_eval = time.time()
         if(MPI_rank(is_herring()) == 0 or MPI_rank(is_herring()) == 1):
           #Rank 0 is bbox, Rank 1 is Segm
@@ -1294,6 +1346,7 @@ class TapeModel(object):
             if scores[1] > 0.339:
               print("#"*20, "SEGM CONVERGED")
               open('/shared/rejin/s_converged', 'a').close()
+
           print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
 

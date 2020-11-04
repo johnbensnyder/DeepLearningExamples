@@ -53,7 +53,6 @@ from mask_rcnn.hyperparameters import mask_rcnn_params
 from mask_rcnn.hyperparameters import params_io
 from mask_rcnn.tf2.mask_rcnn_model import TapeModel
 from mask_rcnn.hyperparameters.cmdline_utils import define_hparams_flags
-
 from mask_rcnn.utils.logging_formatter import log_cleaning
 import dllogger
 
@@ -140,6 +139,15 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
     # with open("/tmp/input_b37", 'wb') as fp:
     #   pickle.dump(batches, fp)
     
+    for ii in range(len(batches)):
+      tmpdict = {}
+      for key in batches[ii]:
+        tmpdict[key] = batches[ii][key].numpy()
+      batches[ii] = tmpdict
+    # import pickle
+    # with open("/tmp/input_b37", 'wb') as fp:
+    #   pickle.dump(batches, fp)
+    
     mrcnn_model.initialize_eval_model(batches[0])
     mrcnn_model.setup_process_workers(4)
     #if MPI_rank() == 0:
@@ -154,9 +162,10 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
         if len(q) !=0 and q[0] != last:
             last = q[0]
             q.popleft()
-            print("#"*20, "Running eval for", last)
+            
+            if MPI_rank() == 0:
+                print("#"*20, "Running eval for", last)
             time.sleep(1)
-            start_load = time.time()
             mrcnn_model.load_model(os.path.join(run_config.model_dir,last))
             start_eval = time.time()
             mrcnn_model.run_eval(steps, batches, async_eval=run_config.async_eval,

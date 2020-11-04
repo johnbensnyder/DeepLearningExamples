@@ -52,7 +52,8 @@ class InputReader(object):
         use_fake_data=False,
         use_instance_mask=False,
         seed=None,
-        disable_options=False
+        disable_options=False,
+        data_mode="train"
     ):
 
         self._mode = mode
@@ -62,7 +63,7 @@ class InputReader(object):
         self._use_instance_mask = use_instance_mask
         self._seed = seed
         self._disable_options = disable_options
-
+        self._data_mode = data_mode
     def _create_dataset_parser_fn(self, params):
         """Create parser for parsing input data (dictionary)."""
 
@@ -71,7 +72,8 @@ class InputReader(object):
             mode=self._mode,
             params=params,
             use_instance_mask=self._use_instance_mask,
-            seed=self._seed
+            seed=self._seed,
+            data_mode=self._data_mode
         )
 
     def __call__(self, params, input_context=None):

@@ -30,9 +30,10 @@ def _get_source_id_from_encoded_image(parsed_tensors):
 class TfExampleDecoder(object):
     """Tensorflow Example proto decoder."""
 
-    def __init__(self, use_instance_mask=False, regenerate_source_id=False,append_original=False,preprocessed=False):
+    def __init__(self, use_instance_mask=False, regenerate_source_id=False,append_original=False,data_mode="train",preprocessed=False):
         self._include_mask = use_instance_mask
         self._regenerate_source_id = regenerate_source_id
+        self.data_mode=data_mode
         self._keys_to_features = {
             'image/encoded': tf.io.FixedLenFeature((), tf.string),
             'image/source_id': tf.io.FixedLenFeature((), tf.string),
@@ -51,7 +52,7 @@ class TfExampleDecoder(object):
             self._keys_to_features.update({
                 'image/object/mask': tf.io.VarLenFeature(tf.string),
             })
-        if preprocessed:
+        if preprocessed and self.data_mode=="train":
             self._keys_to_features.update({
                 'image/scaled_masks': tf.io.VarLenFeature(tf.float32),
                 'image/num_scaled_masks': tf.io.FixedLenFeature((), tf.int64)
@@ -109,6 +110,8 @@ class TfExampleDecoder(object):
     """
         parsed_tensors = tf.io.parse_single_example(
             serialized_example, self._keys_to_features)
+        #print(parsed_tensors)
+        #parsed_tensors['image/source_id'] = tf.strings.as_string(parsed_tensors['image/source_id'])
         for k in parsed_tensors:
             if isinstance(parsed_tensors[k], tf.SparseTensor):
                 if parsed_tensors[k].dtype == tf.string:
@@ -148,7 +151,7 @@ class TfExampleDecoder(object):
         }
         if self._append_original:
             decoded_tensors.update({"parsed_tensors":parsed_tensors})
-        if self._preprocessed:
+        if self._preprocessed and self.data_mode == "train":
             decoded_tensors.update({"flattened_masks":parsed_tensors["image/scaled_masks"]})
             decoded_tensors.update({"num_flattened_masks":parsed_tensors["image/num_scaled_masks"]})
         if self._include_mask:
