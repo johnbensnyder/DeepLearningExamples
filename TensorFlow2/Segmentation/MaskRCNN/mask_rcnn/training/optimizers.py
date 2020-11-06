@@ -569,7 +569,7 @@ class SWA(AveragedOptimizerWrapper):
         # 2. Iteration is one in which snapshot should be taken.
         checkpoint = start_averaging + num_snapshots * average_period
         if self.iterations >= start_averaging and self.iterations == checkpoint:
-            tf.print(self.iterations, start_averaging, average_period, num_snapshots)
+            tf.print('Averaging at iteration:', self.iterations, 'Snapshot:', num_snapshots)
             num_snapshots = tf.cast(num_snapshots, tf.float32)
             average_value = (average_var * num_snapshots + var) / (num_snapshots + 1.0)
             return average_var.assign(average_value, use_locking=self._use_locking)
