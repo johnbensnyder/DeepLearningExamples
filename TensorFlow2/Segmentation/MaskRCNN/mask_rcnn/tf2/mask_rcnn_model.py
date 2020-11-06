@@ -966,19 +966,32 @@ class TapeModel(object):
                                                          alpha=0.001)
         else:
             raise NotImplementedError
-        schedule = warmup_scheduler.WarmupScheduler(schedule, self.params.warmup_learning_rate,
-                                                    self.params.warmup_steps, init_steps=231)
+        swa_steps = 231*11
+        averaging_interval = 231
+        main_schedule = tf.keras.experimental.CosineDecay(self.params.init_learning_rate,
+                                                         swa_steps,
+                                                         alpha=0.001)
+
+        averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(self.params.init_learning_rate * 0.5,
+                                                                            averaging_interval,
+                                                                            end_learning_rate=0.0,
+                                                                            power=1.0,
+                                                                            cycle=True)
+        
+        schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, self.params.init_learning_rate * 0.01)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)
         elif self.params.optimizer_type=="LAMB":
             opt = tfa.optimizers.LAMB(learning_rate=schedule)
         elif self.params.optimizer_type=="Novograd":
-            opt = optimizers.NovoGrad(learning_rate=schedule,
+            base_opt = optimizers.NovoGrad(learning_rate=schedule,
                                           beta_1=self.params.beta1,
                                           beta_2=self.params.beta2,
                                           weight_decay=self.params.l2_weight_decay,
                                           exclude_from_weight_decay=['bias', 'beta', 'batch_normalization'])
+
+            opt = optimizers.SWA(base_opt, start_averaging=swa_steps-1, average_period=averaging_interval)
         else:
             raise NotImplementedError
         if self.params.amp:
