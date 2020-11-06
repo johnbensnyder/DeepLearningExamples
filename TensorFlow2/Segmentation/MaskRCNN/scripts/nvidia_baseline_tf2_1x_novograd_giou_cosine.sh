@@ -37,7 +37,7 @@ mpirun --allow-run-as-root --tag-output --mca plm_rsh_no_tree_spawn 1 \
         --num_steps_per_eval=3696 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
-	--beta2=0.4 \
+	--beta2=0.25 \
 	--warmup_steps=100 \
         --total_steps=45000 \
 	--learning_rate_steps=30000,40000 \
