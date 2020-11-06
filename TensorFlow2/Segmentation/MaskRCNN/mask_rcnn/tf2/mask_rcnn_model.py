@@ -969,7 +969,7 @@ class TapeModel(object):
         swa_steps = 231*11
         averaging_interval = 231
         main_schedule = tf.keras.experimental.CosineDecay(self.params.init_learning_rate,
-                                                         swa_steps,
+                                                         swa_steps + 2 * averaging_interval,
                                                          alpha=0.001)
 
         averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(self.params.init_learning_rate * 0.5,
@@ -977,7 +977,6 @@ class TapeModel(object):
                                                                             end_learning_rate=0.0,
                                                                             power=1.0,
                                                                             cycle=True)
-        
         schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, self.params.init_learning_rate * 0.01)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
@@ -1101,7 +1100,6 @@ class TapeModel(object):
                     grad = 2.0 * grad
                 grads_and_vars.append((grad, var))
 
-            # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
             self.optimizer.apply_gradients(grads_and_vars)
 
             if MPI_is_distributed(False) and sync_weights:
@@ -1266,10 +1264,8 @@ class TapeModel(object):
                     loss_history.append(loss_dict['total_loss'].numpy())
                     step = self.optimizer.iterations
                     learning_rate = self.schedule(step)
-                    p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
-                                                                        learning_rate))
-            #if(self.epoch_num == 1):
-            #  hc.stopProfiling()
+                    p_bar.set_description("Loss: {0:.4f}, LR: {1:.8f}".format(mean(loss_history[-50:]), 
+                                                                            learning_rate))
             tf_profiler.stop()
         else:
             runtype="TrainStep"
