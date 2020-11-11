@@ -20,6 +20,7 @@ else:
     from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
 
 import tensorflow as tf
+from mpi4py import MPI
 
 #from tensorflow.keras.mixed_precision import experimental as mixed_precision
 #policy = mixed_precision.Policy('mixed_float16')
@@ -56,18 +57,38 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn, warmup_input_fn):
     tf.config.optimizer.set_jit(run_config.xla)
     total_epochs = ceil(run_config.total_steps/run_config.num_steps_per_eval)
     mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn, warmup_input_fn)
+    start = time.time()
     mrcnn_model.initialize_model()
+    init_time = time.time() - start
+    if MPI_rank(is_herring())==0:
+      print(f"Init time is {init_time}, Num MPI_ranks {MPI_size(is_herring())}")
     eval_workers = min(MPI_size(is_herring()), 32)
-
+    # if(is_herring()):
+    #   #Regular Barrier won't work because of the server nodes it seems
+    #   comm = MPI.COMM_WORLD
+    #   rank = comm.Get_rank()
+    #   size = comm.Get_size()
+      
+    #   #8 GPUS per node
+    #   ranks = list(range(MPI_size(is_herring())))
+    #   worker_group = comm.group.Incl(ranks)
+    #   worker_comm = comm.Create_group(worker_group)
+    #   worker_comm.barrier()
+    # else:
+    #   MPI.COMM_WORLD.barrier()
+    
     profile_path=None
     if run_config.profile_path:
         profile_path=run_config.profile_path
     if run_config.offload_eval:
     #if True:
         for epoch in range(total_epochs):
+            # if(epoch > 2):
+            #   return
             if MPI_rank(is_herring())==0:
                 logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
             mrcnn_model.train_epoch(run_config.total_steps, broadcast=epoch==0, profile=f"{profile_path}_{epoch}" if profile_path else None)
+            
     
     else:
         #for epoch in range(1):
@@ -75,12 +96,15 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn, warmup_input_fn):
         #        logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
         #    mrcnn_model.train_epoch(run_config.total_steps, broadcast=epoch==0)
         for epoch in range(total_epochs):
+            # if(epoch > 2):
+            #   return
             if MPI_rank(is_herring())==0:
                 logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
-            mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0)
+            mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0, profile=f"{profile_path}_{epoch}" if profile_path else None)
             if MPI_rank(is_herring())==0:
                 logging.info("Running epoch {} evaluation".format(epoch+1))
             if epoch >= run_config.first_eval:
                 mrcnn_model.run_eval(run_config.eval_samples//eval_workers, async_eval=run_config.async_eval, 
                                  use_ext=run_config.use_ext)
+            
 

@@ -6,7 +6,7 @@ class WarmupScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
     Wraps another learning rate scheduler to add a linear or exponential warmup
     """
     
-    def __init__(self, schedule, initial_learning_rate, warmup_steps, warmup_type='linear',
+    def __init__(self, schedule, initial_learning_rate, warmup_steps, warmup_type='linear', init_steps=0,
                  dtype=tf.float32):
         super(WarmupScheduler, self).__init__()
         self.schedule = schedule
@@ -15,14 +15,19 @@ class WarmupScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
         self.warmup_type = warmup_type
         self.dtype = dtype
         self.schedule_learning_rate = self.schedule(0)
+        self.init_steps = init_steps
         
     def compute_linear_warmup(self, step):
-        return ((self.schedule_learning_rate*step) + (self.initial_learning_rate*(self.warmup_steps-step)))/self.warmup_steps
+        if(step >= self.init_steps):
+          return ((self.schedule_learning_rate*step) + (self.initial_learning_rate*(self.warmup_steps-step)))/self.warmup_steps
+        return 0.0
     
+    #TODO: Change to properly add init_steps 
+    #TODO: Should init steps he part of warmup??
     @tf.function
     def __call__(self, step):
         global_step_recomp = tf.cast(step, self.dtype)
-        if global_step_recomp>=self.warmup_steps:
+        if global_step_recomp>=(self.warmup_steps): #+ self.init_steps):
             return self.schedule(global_step_recomp)
         return self.compute_linear_warmup(global_step_recomp)
     

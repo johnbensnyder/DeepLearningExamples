@@ -48,12 +48,12 @@ mkdir -p $BASEDIR/../baseline_1x_tape
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
-        --num_steps_per_eval=6000 \
+        --num_steps_per_eval=231 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.25 \
 	--warmup_steps=1000 \
-        --total_steps=2000 \
+        --total_steps=4158 \
         --l2_weight_decay=1.25e-3 \
 	--use_carl_loss \
 	--label_smoothing=0.1 \
@@ -68,5 +68,6 @@ mkdir -p $BASEDIR/../baseline_1x_tape
         --use_batched_nms \
         --xla \
         --tf2 \
+        --profile_path="/shared/sboshin/horovod_first_epoch/" \
 	--preprocessed_data=${PRECALC_DATASET} \
         --use_custom_box_proposals_op | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log

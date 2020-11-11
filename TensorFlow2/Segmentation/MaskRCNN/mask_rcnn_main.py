@@ -172,17 +172,17 @@ def main(argv):
                 seed=RUN_CONFIG.seed,
                 disable_options=RUN_CONFIG.disable_data_options
             )
-#            warmup_input_fn = dataloader.InputReader(
-#                file_pattern=RUN_CONFIG.warmup_file_pattern,
-#                mode=tf.estimator.ModeKeys.TRAIN,
-#                num_examples=None,
-#                use_fake_data=RUN_CONFIG.use_fake_data,
-#                use_instance_mask=RUN_CONFIG.include_mask,
-#                seed=RUN_CONFIG.seed,
-#                disable_options=RUN_CONFIG.disable_data_options,
-#                data_mode="warmup"
-#            )
-            warmup_input_fn = None
+            warmup_input_fn = dataloader.InputReader(
+                file_pattern=RUN_CONFIG.warmup_file_pattern,
+                mode=tf.estimator.ModeKeys.TRAIN,
+                num_examples=None,
+                use_fake_data=RUN_CONFIG.use_fake_data,
+                use_instance_mask=RUN_CONFIG.include_mask,
+                seed=RUN_CONFIG.seed,
+                disable_options=RUN_CONFIG.disable_data_options,
+                data_mode="warmup"
+            )
+           #warmup_input_fn = None
     else:
         train_input_fn = None
 
