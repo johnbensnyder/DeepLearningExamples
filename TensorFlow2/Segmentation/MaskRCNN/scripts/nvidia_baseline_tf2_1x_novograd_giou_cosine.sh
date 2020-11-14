@@ -14,8 +14,8 @@
 # limitations under the License.
 
 
-rm -rf results_tf2_1x_novo_giou_cosine_carl
-mkdir -p results_tf2_1x_novo_giou_cosine_carl
+#rm -rf results_tf2_1x_novo_giou_cosine_carl
+#mkdir -p results_tf2_1x_novo_giou_cosine_carl
 mpirun --allow-run-as-root --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
     -np 8 -H localhost:8 \
