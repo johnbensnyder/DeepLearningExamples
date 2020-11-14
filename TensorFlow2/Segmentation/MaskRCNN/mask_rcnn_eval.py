@@ -27,7 +27,7 @@ import cProfile, pstats
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_op=0,executor=0'
 # os.environ["TF_XLA_FLAGS"] = 'tf_xla_print_cluster_outputs=1'
-
+os.environ["TF_XLA_FLAGS"] = '--tf_xla_enable_lazy_compilation=false --tf_xla_min_cluster_size=5'
 from absl import app
 
 import tensorflow as tf
@@ -95,7 +95,7 @@ def get_latest_checkpoint(q, checkpoint_dir, model):
         if (latest is not None) and (len(q) == 0 or q[-1] != latest) and (latest not in encountered_checkpoints):
             q.append(latest)
             encountered_checkpoints.add(latest)
-        time.sleep(1)
+        time.sleep(0.1)
 
 
 
@@ -165,7 +165,7 @@ def do_eval(run_config, train_input_fn, eval_input_fn):
             
             if MPI_rank() == 0:
                 print("#"*20, "Running eval for", last)
-            time.sleep(1)
+            time.sleep(0.6)
             start_load = time.time()
             mrcnn_model.load_model(os.path.join(run_config.model_dir,last))
             start_eval = time.time()

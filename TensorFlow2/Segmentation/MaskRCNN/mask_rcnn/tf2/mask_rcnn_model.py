@@ -945,8 +945,10 @@ class TapeModel(object):
             if my_file_b.is_file() and my_file_s.is_file():
                 print("Convergence reached.")
                 print(f'Time taken is: {time.time() - self.st}')
-                sys.exit(0)
-            time.sleep(1)
+                os.remove("/shared/rejin/b_converged")
+                os.remove("/shared/rejin/s_converged")
+                #sys.exit(0)
+            time.sleep(0.1)
                 
     def load_weights(self):
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)

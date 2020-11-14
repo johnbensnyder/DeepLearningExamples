@@ -32,7 +32,7 @@ os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
 os.environ['TF_GPU_THREAD_COUNT'] = '1'
 os.environ["TF_NUM_INTRAOP_THREADS"]="7"
 os.environ["TF_NUM_INTEROP_THREADS"]="6"
-
+os.environ["TF_XLA_FLAGS"] = '--tf_xla_enable_lazy_compilation=false --tf_xla_min_cluster_size=5'
 
 #for k,v in os.environ.items():
 #    print(f'{k} : {v}')
