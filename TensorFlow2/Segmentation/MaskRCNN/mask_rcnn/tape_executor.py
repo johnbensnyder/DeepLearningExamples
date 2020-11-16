@@ -53,12 +53,16 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
     # load last checkpoint if available
     latest_ckpt = max(glob('{}/*.h5'.format(run_config.model_dir)), default=None)
     start_epoch = 0
+    phase2_epoch = 7
     if latest_ckpt:
         logging.info('Loading checkpoint {}'.format(latest_ckpt))
-        mrcnn_model.epoch_num = start_epoch = int(re.search('weights_(\d+)\.h5', latest_ckpt).group(1))
+        mrcnn_model.epoch_num = start_epoch = int(re.search('weights_(\d+)\.h5', latest_ckpt).group(1)) + 1
         # set optimizer state
         mrcnn_model.optimizer.iterations = tf.Variable(start_epoch * run_config.num_steps_per_eval, trainable=False, dtype=tf.int64)
         mrcnn_model.load_model(latest_ckpt)
+    mrcnn_model.phase2_optimizer.iterations = tf.Variable(phase2_epoch * run_config.num_steps_per_eval, trainable=False, dtype=tf.int64)
+    if start_epoch * run_config.num_steps_per_eval > phase2_epoch * run_config.num_steps_per_eval:
+        mrcnn_model.phase2_optimizer.iterations.assign(start_epoch * run_config.num_steps_per_eval)
 
     eval_workers = min(MPI_size(is_herring()), 32)
  
@@ -73,14 +77,15 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
         #    if MPI_rank(is_herring())==0:
         #        logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
         #    mrcnn_model.train_epoch(run_config.total_steps, broadcast=epoch==0)
+        PHASE1_EPOCH = 7
         for epoch in range(start_epoch, total_epochs):
-            phase = 1 if epoch < 6 else 2
+            phase = 1 if epoch < PHASE1_EPOCH else 2
             if MPI_rank(is_herring())==0:
                 logging.info("Starting epoch {} of {}".format(epoch+1, total_epochs))
             mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0, phase=phase)
             if MPI_rank(is_herring())==0:
                 logging.info("Running epoch {} evaluation".format(epoch+1))
-            if epoch >= 6: # run_config.first_eval:
+            if epoch >= run_config.first_eval:
                 mrcnn_model.run_eval(run_config.eval_samples//eval_workers, async_eval=run_config.async_eval, 
                                  use_ext=run_config.use_ext)
 

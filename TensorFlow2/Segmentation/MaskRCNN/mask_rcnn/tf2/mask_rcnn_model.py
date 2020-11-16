@@ -848,7 +848,7 @@ class TapeModel(object):
         eval_params = dict(self.params.values(), batch_size=self.params.eval_batch_size)
         self.eval_tdf = iter(eval_input_fn(eval_params).repeat()) \
                             if eval_input_fn else None
-        self.optimizer, self.schedule = self.get_optimizer(phase1_steps=3696*6, averaging_interval=3696)
+        self.optimizer, self.phase2_optimizer, self.schedule = self.get_optimizer(phase1_steps=3696*8, averaging_interval=3696)
         self.epoch_num = 0
 
     def load_weights(self):
@@ -876,13 +876,15 @@ class TapeModel(object):
                                                          phase1_steps + 2 * averaging_interval,
                                                          alpha=0.001)
 
-            averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(self.params.init_learning_rate * 0.6,
-                                                                            averaging_interval,
-                                                                            end_learning_rate=0.0,
+            averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(0.001, #self.params.init_learning_rate * 0.01,
+                                                                            0.25 * averaging_interval,
+                                                                            end_learning_rate=0.0001, #self.params.init_learning_rate * 0.01,
                                                                             power=1.0,
                                                                             cycle=True)
-     
+#            averaging_schedule = tf.keras.experimental.CosineDecayRestarts(0.004, 0.25*averaging_interval, t_mul=1.0, m_mul=1.0, alpha=0.0004)
+    
             schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, phase1_steps, self.params.init_learning_rate * 0.01)
+
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)
@@ -895,13 +897,20 @@ class TapeModel(object):
                                           weight_decay=self.params.l2_weight_decay,
                                           exclude_from_weight_decay=['bias', 'beta', 'batch_normalization'])
 
+##            phase2_opt = tfa.optimizers.SGDW(learning_rate=schedule, weight_decay=1e-5, momentum=0.0) # TUNE if this works
+            phase2_opt = optimizers.NovoGrad(learning_rate=schedule,
+                                          beta_1=self.params.beta1,
+                                          beta_2=self.params.beta2,
+                                          weight_decay=self.params.l2_weight_decay,
+                                          exclude_from_weight_decay=['bias', 'beta', 'batch_normalization'])
 ##            opt = optimizers.SWA(base_opt, start_averaging=phase1_steps-1, average_period=averaging_interval)
             opt = base_opt
         else:
             raise NotImplementedError
         if self.params.amp:
             opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, 'dynamic')
-        return opt, schedule
+            phase2_opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(phase2_opt, 'dynamic')
+        return opt, phase2_opt, schedule
 
     @tf.function
     def train_step_phase2(self, features, labels, sync_weights=False, sync_opt=False):
@@ -946,9 +955,9 @@ class TapeModel(object):
                 + loss_dict['total_fast_rcnn_loss'] + loss_dict['mask_loss'] \
                 + loss_dict['l2_regularization_loss']
             if self.params.amp:
-                scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
+                scaled_loss = self.phase2_optimizer.get_scaled_loss(loss_dict['total_loss'])
                 scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
-                gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+                gradients = self.phase2_optimizer.get_unscaled_gradients(scaled_gradients)
             else:
                 gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
             global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
@@ -966,7 +975,7 @@ class TapeModel(object):
                     grad = 2.0 * grad
                 grads_and_vars.append((grad, var))
 
-            self.optimizer.apply_gradients(grads_and_vars)
+            self.phase2_optimizer.apply_gradients(grads_and_vars)
 
         return loss_dict
  
@@ -1090,12 +1099,15 @@ class TapeModel(object):
         self.load_weights()
     
     def train_epoch(self, steps, broadcast=False, profile=None, phase=1):
-        if MPI_rank(is_herring())==0:
-            logging.info("Starting training loop")
-            p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-            loss_history = []
-        else:
-            p_bar = range(steps)
+        logging.info("Starting training loop")
+        if phase == 1:
+            if MPI_rank(is_herring())==0:
+                p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', position=MPI_rank(is_herring()))
+            else:
+                p_bar = range(steps)
+        elif phase == 2:
+            p_bar = tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}', position=MPI_rank(is_herring()))
+        loss_history = []
         times=[]
         global st
         if MPI_rank(is_herring())==0 and profile is not None:
@@ -1143,25 +1155,34 @@ class TapeModel(object):
                      loss_dict = self.train_step_phase1(features, labels, b_w, b_o)
                 else:
                      loss_dict = self.train_step_phase2(features, labels, b_w, b_o)
-                if phase == 2 and i == steps-1:
+                if phase == 2 and i == steps-1: # average weights on last training step
+                    logging.info("BARRIER")
                     _ = hvd.allreduce(tf.constant(0.0)) # barrier
                     print("AVERAGING WEIGHTS")
                     for i, v in enumerate(self.forward.variables):
                         if i == 0:
-                            tf.print('BEFORE:', v[0,0,0,:])
-                        v.assign(hvd.allreduce(v)) # op is None so defaults to average - can we do allreduce on a list of tensors??
+                            tf.print('BEFORE:', v[0,0,1,:])
+                        v.assign(hvd.allreduce(v)) # op is None so defaults to average
                         if i == 0:
-                            tf.print('AFTER:', v[0,0,0,:])
+                            tf.print('AFTER:', v[0,0,1,:])
 
                 times.append(time.perf_counter()-tstart)
                 #nvtx.pop(step_token)
-                if MPI_rank(is_herring())==0:
+                if phase == 1:
+                    if MPI_rank(is_herring())==0:
+                        loss_history.append(loss_dict['total_loss'].numpy())
+                        step = self.optimizer.iterations
+                        learning_rate = self.schedule(step)
+                        p_bar.set_description("Loss: {0:.4f}, LR: {1:.8f}".format(mean(loss_history[-50:]), 
+                                                                                learning_rate))
+                else:
                     loss_history.append(loss_dict['total_loss'].numpy())
-                    step = self.optimizer.iterations
+                    step = self.phase2_optimizer.iterations
                     learning_rate = self.schedule(step)
                     p_bar.set_description("Loss: {0:.4f}, LR: {1:.8f}".format(mean(loss_history[-50:]), 
                                                                             learning_rate))
-            
+
+                
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[500:])*1000.} +/- {np.std(times[500:])*1000.} ms")
         if MPI_rank(is_herring()) == 0:
@@ -1169,8 +1190,9 @@ class TapeModel(object):
                 print(f'Total time is {time.time() - st}')
             #print(f'average step time={np.mean(timings[10:])} +/- {np.std(timings[10:])}')
             print("Saving checkpoint...")
-            self.epoch_num+=1
+            # self.epoch_num+=1
             self.save_model()
+        self.epoch_num+=1
 
 
     def get_latest_checkpoint(self):
