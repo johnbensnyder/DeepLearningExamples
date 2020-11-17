@@ -17,7 +17,7 @@
 # as specified in hosts file
 
 BATCH_SIZE=1
-HOST_COUNT=`wc -l < /shared/sboshin/eval_hosts`
+HOST_COUNT=8
 GPU_COUNT=`nvidia-smi --query-gpu=name --format=csv,noheader | wc -l`
 IMAGES=118287
 GLOBAL_BATCH_SIZE=$((BATCH_SIZE * HOST_COUNT * GPU_COUNT))
@@ -27,21 +27,21 @@ SECOND_DECAY=$(( 12 * STEP_PER_EPOCH ))
 TOTAL_STEPS=$(( 15 * STEP_PER_EPOCH ))
 LR_MULTIPLIER=0.001
 BASE_LR=$(echo $GLOBAL_BATCH_SIZE*$LR_MULTIPLIER | bc)
+LD_LIBRARY_PATH="/usr/local/cuda/lib:/usr/local/cuda/efa/lib:/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/cuda/lib:/opt/amazon/efa/lib:/usr/local/mpi/lib:"
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-/opt/amazon/openmpi/bin/mpirun --allow-run-as-root --tag-output -v --mca plm_rsh_no_tree_spawn 1 \
+/opt/amazon/openmpi/bin/mpirun --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/sboshin/eval_hosts \
-    -N 8 \
-    -x NCCL_DEBUG=VERSION \
-    -x LD_LIBRARY_PATH=/usr/local/cuda-10.1/lib64:/shared/conda/pkgs/cuda-toolkit/extras/CUPTI/lib64/:$LD_LIBRARY_PATH \
+    --hostfile /shared/eval_hostfile \
+    -x LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     -x PATH \
-    -x RDMAV_FORK_SAFE=1 \
-    -x FI_PROVIDER="efa" \
-    --bind-to none \
+    -N 8 \
+    -x RDMAV_FORK_SAFE=1 -x NCCL_DEBUG=info \
+    -x FI_EFA_USE_DEVICE_RDMA=1 \
+    --mca pml ^cm --bind-to none \
     --oversubscribe \
     bash launcher.sh \
-    /shared/sboshin/conda/bin/python ${BASEDIR}/../mask_rcnn_eval.py \
+    python ${BASEDIR}/../mask_rcnn_eval.py \
         --mode="train_and_eval" \
         --checkpoint="/home/ubuntu/sboshin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
@@ -51,7 +51,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
         --learning_rate_steps="$FIRST_DECAY,$SECOND_DECAY" \
         --optimizer_type="SGD" \
         --lr_schedule="piecewise" \
-        --model_dir="$BASEDIR/../results_tape_1x" \
+	--model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
         --num_steps_per_eval=$STEP_PER_EPOCH \
         --warmup_learning_rate=0.000133 \
         --warmup_steps=1500 \
@@ -61,7 +61,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
         --train_batch_size=$BATCH_SIZE \
         --eval_batch_size=1 \
         --dist_eval \
-        --training_file_pattern="/shared/data2/train*.tfrecord" \
+        --training_file_pattern="/scratch/precalc_masks_latest/train*.tfrecord" \
         --validation_file_pattern="/shared/data2/val*.tfrecord" \
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \

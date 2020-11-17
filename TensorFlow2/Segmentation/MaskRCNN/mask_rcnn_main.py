@@ -32,7 +32,7 @@ os.environ['TF_GPU_THREAD_MODE'] = 'gpu_private'
 os.environ['TF_GPU_THREAD_COUNT'] = '1'
 os.environ["TF_NUM_INTRAOP_THREADS"]="7"
 os.environ["TF_NUM_INTEROP_THREADS"]="6"
-
+os.environ["TF_XLA_FLAGS"] = '--tf_xla_enable_lazy_compilation=false --tf_xla_min_cluster_size=5'
 
 #for k,v in os.environ.items():
 #    print(f'{k} : {v}')
@@ -172,17 +172,17 @@ def main(argv):
                 seed=RUN_CONFIG.seed,
                 disable_options=RUN_CONFIG.disable_data_options
             )
-#            warmup_input_fn = dataloader.InputReader(
-#                file_pattern=RUN_CONFIG.warmup_file_pattern,
-#                mode=tf.estimator.ModeKeys.TRAIN,
-#                num_examples=None,
-#                use_fake_data=RUN_CONFIG.use_fake_data,
-#                use_instance_mask=RUN_CONFIG.include_mask,
-#                seed=RUN_CONFIG.seed,
-#                disable_options=RUN_CONFIG.disable_data_options,
-#                data_mode="warmup"
-#            )
-            warmup_input_fn = None
+            warmup_input_fn = dataloader.InputReader(
+                file_pattern=RUN_CONFIG.warmup_file_pattern,
+                mode=tf.estimator.ModeKeys.TRAIN,
+                num_examples=None,
+                use_fake_data=RUN_CONFIG.use_fake_data,
+                use_instance_mask=RUN_CONFIG.include_mask,
+                seed=RUN_CONFIG.seed,
+                disable_options=RUN_CONFIG.disable_data_options,
+                data_mode="warmup"
+            )
+#            warmup_input_fn = None
     else:
         train_input_fn = None
 

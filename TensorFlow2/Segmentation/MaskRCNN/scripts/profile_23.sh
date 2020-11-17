@@ -23,38 +23,38 @@ PRECALC_DATASET=1
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
- 
-rm -rf $BASEDIR/../baseline_1x_tape
-mkdir -p $BASEDIR/../baseline_1x_tape
+
+LD_LIBRARY_PATH="/usr/local/cuda/lib:/usr/local/cuda/efa/lib:/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/cuda/lib:/opt/amazon/efa/lib:/usr/local/mpi/lib:"
+
 /opt/amazon/openmpi/bin/mpirun --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    -x NCCL_DEBUG=VERSION \
-    --hostfile /shared/rejin/hosts_64x \
-    -x LD_LIBRARY_PATH \
+    --hostfile /shared/hostfile \
+    -x LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     -x PATH \
     -N 8 \
-    -x FI_PROVIDER="efa" \
+    -x RDMAV_FORK_SAFE=1 -x NCCL_DEBUG=info \
+    -x FI_EFA_USE_DEVICE_RDMA=1 \
+    --mca pml ^cm --bind-to none \
     --oversubscribe \
-    --bind-to none \
     bash launcher.sh \
-    /shared/rejin/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    /shared/rejin/conda24/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
         --checkpoint="/shared/rejin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
         --log_interval=10 \
-        --init_learning_rate=0.08 \
+        --init_learning_rate=0.07 \
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
-        --num_steps_per_eval=6000 \
+        --num_steps_per_eval=231 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.25 \
 	--warmup_steps=1000 \
-        --total_steps=2000 \
-        --l2_weight_decay=1.25e-3 \
+        --total_steps=4158 \
+        --l2_weight_decay=1.275e-3 \
 	--use_carl_loss \
 	--label_smoothing=0.1 \
         --train_batch_size=1 \
@@ -63,6 +63,7 @@ mkdir -p $BASEDIR/../baseline_1x_tape
 	--first_eval=22 \
         --training_file_pattern="/scratch/precalc_masks_latest/train*.tfrecord" \
         --validation_file_pattern="/shared/data2/val*.tfrecord" \
+	--warmup_file_pattern="/shared/dummydata_coco/train*.tfrecord" \
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --use_batched_nms \

@@ -25,20 +25,20 @@ rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
  
 
-/shared/conda/bin/herringrun -n 8 --homogeneous -c /shared/conda \
+/shared/rejin/conda24/bin/herringrun -n 64 --homogeneous -c /shared/rejin/conda24 \
     RUN_HERRING=1 \
-    /shared/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    /shared/rejin/conda24/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
-        --checkpoint="/shared/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
+        --checkpoint="/shared/rejin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
         --log_interval=10 \
         --init_learning_rate=0.07 \
         --optimizer_type="Novograd" \
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
-        --num_steps_per_eval=231 \
+        --num_steps_per_eval=2000 \
         --warmup_learning_rate=0.000133 \
 	--beta1=0.9 \
 	--beta2=0.25 \

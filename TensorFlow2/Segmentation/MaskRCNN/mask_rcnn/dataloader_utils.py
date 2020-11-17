@@ -180,9 +180,9 @@ def dataset_parser(value,
             data,
             skip_crowd_during_training=params['skip_crowd_during_training'],
             use_category=params['use_category'],
-            use_instance_mask=use_instance_mask and (not params["preprocessed_data"] or params["validate_preprocessed"]))
+            use_instance_mask=use_instance_mask and (not params["preprocessed_data"] or params["validate_preprocessed"] or data_mode != "train"))
 
-        precached_masks=get_preprocessed(data) if params["preprocessed_data"] else None
+        precached_masks=get_preprocessed(data) if params["preprocessed_data"] and data_mode == "train" else None
         image, image_info, boxes, instance_masks, flipped = preprocess_image(
             image,
             boxes=boxes,
@@ -203,7 +203,7 @@ def dataset_parser(value,
 
         # Pads cropped_gt_masks.
         if use_instance_mask:
-          if not params["preprocessed_data"]:
+          if not params["preprocessed_data"]  or data_mode != "train" :
             labels['cropped_gt_masks'] = process_gt_masks_for_training(
                 instance_masks,
                 boxes,

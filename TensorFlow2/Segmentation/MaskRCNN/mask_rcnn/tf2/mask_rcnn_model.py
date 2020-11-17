@@ -934,16 +934,18 @@ class TapeModel(object):
         if MPI_rank() == 0 and self.params.mode == "train_and_eval":
             converge_thread = threading.Thread(target=self.convergence_checker,
                                             name="convergence_checker_thread")
-            #converge_thread.start()
+            converge_thread.start()
 
 
     def convergence_checker(self):
-        my_file = Path("/shared/converged")
+        my_file_b = Path("/shared/rejin/b_converged")
+        my_file_s = Path("/shared/rejin/s_converged")        
         while True:
-            if my_file.is_file():
+            if my_file_b.is_file() and my_file_s.is_file():
                 print("Convergence reached.")
                 print(f'Time taken is: {time.time() - self.st}')
-                sys.exit(0)
+                os.remove("/shared/rejin/b_converged")
+                os.remove("/shared/rejin/s_converged")
             time.sleep(1)
                 
     def load_weights(self):
@@ -963,7 +965,7 @@ class TapeModel(object):
         else:
             raise NotImplementedError
         schedule = warmup_scheduler.WarmupScheduler(schedule, self.params.warmup_learning_rate,
-                                                    self.params.warmup_steps)
+                                                    self.params.warmup_steps, init_steps=231)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)
@@ -1098,31 +1100,43 @@ class TapeModel(object):
         return loss_dict
     
     def initialize_model(self):
-        features, labels = next(self.train_tdf)
-        model_outputs = self.forward(features, labels, self.params.values(), True)
+
+        steps = 231
+
+        #features, labels = next(self.train_tdf)
+        for i in range(steps):
+          _, _ = next(self.warmup_tdf)
+#          _, _ = next(self.train_tdf)
+#
+        if MPI_rank(is_herring())==0:
+           logging.info("Initializing model")
+           p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+           loss_history = []
+        else:
+           p_bar = range(steps)
+        for i in p_bar:
+          if i==0:
+              b_w, b_o = True, True
+          elif i == 1:
+              b_w, b_o = False, True
+          else:
+              b_w, b_o = False, False
+
+          b_w = tf.convert_to_tensor(b_w)
+          b_o = tf.convert_to_tensor(b_o)
+          features, labels = next(self.warmup_tdf)
+#          features['images'] = tf.zeros_like(features['images'])
+          loss_dict = self.train_step(features, labels, b_w, b_o)
+          if MPI_rank()==0:
+            loss_history.append(loss_dict['total_loss'].numpy())
+            step = self.optimizer.iterations
+            learning_rate = self.schedule(step)
+            #if(learning_rate > 0):
+            #  print(learning_rate, step)
+            p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]),
+                                                                learning_rate))
         self.load_weights()
-        steps = 300
 
-        b_w = tf.convert_to_tensor(True)
-        b_o = tf.convert_to_tensor(True)
-        loss_dict = self.train_step(features, labels, b_w, b_o)
-        prediction = self.predict(features)
-        #if MPI_rank(is_herring())==0:
-        #    logging.info("Initializing model")
-        #    p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
-        #else:
-        #    p_bar = range(steps)
-
-        #for i in p_bar:
-        #    if i == 0:
-        #        b_w, b_o = True, True
-        #    else:
-        #        b_w, b_o = False, False
-        #    features, labels = next(self.warmup_tdf)
-        #    b_w = tf.convert_to_tensor(b_w)
-        #    b_o = tf.convert_to_tensor(b_o)
-        #    loss_dict = self.train_step(features, labels, b_w, b_o, True)
-        #self.load_weights()
     
     def initialize_eval_model(self, features):
         for _ in range(5):
@@ -1166,7 +1180,7 @@ class TapeModel(object):
         else:
             runtype="TrainStep"
             for i in p_bar:
-                if i == 1 and self.epoch_num == 0:
+                if i == 0 and self.epoch_num == 0:
                     self.st = time.time()
                 if broadcast and i==0:
                     b_w, b_o = True, True
@@ -1189,8 +1203,8 @@ class TapeModel(object):
                     p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
                                                                             learning_rate))
             
-        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[10:])*1000.} +/- {np.std(times[10:])*1000.} ms")
-        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[500:])*1000.} +/- {np.std(times[500:])*1000.} ms")
+        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[2:])*1000.} +/- {np.std(times[2:])*1000.} ms")
+        logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times[100:])*1000.} +/- {np.std(times[100:])*1000.} ms")
         if MPI_rank(is_herring()) == 0:
             if self.epoch_num == 15:
                 print(f'Total time is {time.time() - self.st}')
@@ -1255,6 +1269,7 @@ class TapeModel(object):
                 'image_info': features['image_info'],
             })
         return model_outputs
+    
     #@profile_dec
     def run_eval(self, steps, batches, async_eval=False, use_ext=False, use_dist_coco_eval=False):
         #steps = 5
@@ -1339,17 +1354,18 @@ class TapeModel(object):
         if(MPI_rank(is_herring()) == 0 or MPI_rank(is_herring()) == 1):
           #Rank 0 is bbox, Rank 1 is Segm
           if(MPI_rank(is_herring()) == 0):
+            print(f"acc:{scores[0]}")
             if scores[0] > 0.377:
-              print("#"*20, "BBOX CONVERGED")
+              print("#"*20, f"BBOX CONVERGED to {scores[0]}")
               open('/shared/rejin/b_converged', 'a').close()
           if(MPI_rank(is_herring()) == 1):
+            print(f"acc:{scores[1]}")
             if scores[1] > 0.339:
-              print("#"*20, "SEGM CONVERGED")
+              print("#"*20, f"SEGM CONVERGED to {scores[1]}")
               open('/shared/rejin/s_converged', 'a').close()
 
           print(f"(avg, total) DataLoad ({data_load_total/steps}, {data_load_total}) predict ({predict_total/steps}, {predict_total})")
           print(f"Total Time {end_coco_eval-start_total_infer} Total Infer {end_total_infer - start_total_infer} gather res {end_gather_result - end_total_infer} coco_eval {end_coco_eval - end_gather_result}")
-
 #@profile_dec
 def coco_pre_process(in_q, out_q, finish_input):
       

@@ -657,7 +657,6 @@ def coco_mask_eval(predictions, segm_cnts, cocoGt, use_ext, use_dist_coco_eval, 
       cocoEval.accumulate()
       cocoEval.summarize()
       #print(f"coco c++ ext {time.time() - start}")
-
 #@profile_dec
 def fast_eval(predictions, cocoGt, use_ext, use_dist_coco_eval):
     # import pickle
