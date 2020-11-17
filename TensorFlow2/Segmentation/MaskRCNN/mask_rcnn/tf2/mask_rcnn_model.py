@@ -977,7 +977,7 @@ class TapeModel(object):
                                                                             end_learning_rate=0.0,
                                                                             power=1.0,
                                                                             cycle=True)
-        schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, self.params.init_learning_rate * 0.01)
+        schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, self.params.init_learning_rate * 0.01, init_steps=231)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)

@@ -103,7 +103,7 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn, warmup_input_fn):
             mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0, profile=f"{profile_path}_{epoch}" if profile_path else None)
             if MPI_rank(is_herring())==0:
                 logging.info("Running epoch {} evaluation".format(epoch+1))
-            if epoch >= 8: # run_config.first_eval:
+            if epoch >= run_config.first_eval:
                 mrcnn_model.run_eval(run_config.eval_samples//eval_workers, async_eval=run_config.async_eval, 
                                  use_ext=run_config.use_ext)
             

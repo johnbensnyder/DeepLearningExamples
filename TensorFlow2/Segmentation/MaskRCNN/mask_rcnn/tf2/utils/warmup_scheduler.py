@@ -48,13 +48,14 @@ class SWAScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
                     warmup_steps, swa_steps, swa_constant_lr, warmup_type='linear',
                     init_steps=0, dtype=tf.float32):
         super(SWAScheduler, self).__init__()
-        self.main_schedule = main_schedule
+        self.schedule = self.main_schedule = main_schedule
         self.averaging_schedule = averaging_schedule
         self.initial_learning_rate = tf.cast(initial_learning_rate, dtype)
         self.warmup_steps = tf.cast(warmup_steps, dtype)
         self.swa_steps = tf.cast(swa_steps, dtype)
         self.swa_constant_lr = swa_constant_lr
         self.warmup_type = warmup_type
+        self.init_steps = init_steps
         self.dtype = dtype
         self.schedule_learning_rate = self.main_schedule(0)
  
