@@ -197,11 +197,13 @@ def define_hparams_flags():
         default=None,
         help='The directory where the model and training/evaluation summaries are stored.'
     )
+
     flags.DEFINE_bool(
         'preprocessed_data',
         default=False,
         help=('If set use precomputed masks.')
     )
+
     flags.DEFINE_float("momentum", default=0.9, help="Optimizer Momentum")
     flags.DEFINE_float("beta1", default=0.9, help="novograd b1")
     flags.DEFINE_float("beta2", default=0.3, help="novograd b2")
@@ -222,6 +224,22 @@ def define_hparams_flags():
         )
     )
 
+    flags.DEFINE_integer(
+        'swa_start_epoch',
+        default=11,
+        help=(
+            'Epoch when SWA will start averaging weights.'
+        )
+    )
+
+    flags.DEFINE_integer(
+        'swa_averaging_interval',
+        default=231,
+        help=(
+            'Number of steps between SWA averaging op.'
+        )
+    )
+
     flags.DEFINE_list(
         'learning_rate_decay_levels',
         default=['0.1', '0.01'],
@@ -230,6 +248,7 @@ def define_hparams_flags():
             ' `lr = decay * init_lr`. Decay factor applied at learning_rate_steps.'
         )
     )
+
     flags.DEFINE_list(
         'learning_rate_steps',
         default=['480000', '640000'],
@@ -259,6 +278,7 @@ def define_hparams_flags():
         default=False,
         help='Use GenerateBoundingBoxProposals op.'
     )
+
     flags.DEFINE_bool('use_fake_data', False, 'Use fake input.')
 
     flags.DEFINE_bool(
@@ -283,6 +303,7 @@ def define_hparams_flags():
     flags.DEFINE_string('val_json_file', default="", help='Filepath for the validation json file')
 
     flags.DEFINE_bool('run_herring', default=False, help='Enable Herring')
+
     flags.DEFINE_bool('offload_eval', default=False, help='Run eval on another node')
     ############################# TO BE REMOVED ###################################
 

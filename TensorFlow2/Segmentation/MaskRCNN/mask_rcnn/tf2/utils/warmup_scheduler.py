@@ -62,7 +62,7 @@ class SWAScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
     def compute_linear_warmup(self, step):
         if(step >= self.init_steps):
             return ((self.schedule_learning_rate*step) + (self.initial_learning_rate*(self.warmup_steps-step)))/self.warmup_steps
-        return tf.constant(0.0)
+        return 0.0
  
     @tf.function
     def __call__(self, step):

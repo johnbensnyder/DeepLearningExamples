@@ -966,8 +966,9 @@ class TapeModel(object):
                                                          alpha=0.001)
         else:
             raise NotImplementedError
-        swa_steps = 231*11
-        averaging_interval = 231
+
+        swa_steps = self.params.swa_start_epoch * self.params.swa_averaging_interval # 231*11
+        averaging_interval = self.params.swa_averaging_interval # 231
         main_schedule = tf.keras.experimental.CosineDecay(self.params.init_learning_rate,
                                                          swa_steps + 2 * averaging_interval,
                                                          alpha=0.001)
