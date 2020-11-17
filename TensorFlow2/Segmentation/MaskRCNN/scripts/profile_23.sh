@@ -26,18 +26,20 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
  
 rm -rf $BASEDIR/../baseline_1x_tape
 mkdir -p $BASEDIR/../baseline_1x_tape
+LD_LIBRARY_PATH="/usr/local/cuda/lib:/usr/local/cuda/efa/lib:/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/cuda/lib:/opt/amazon/efa/lib:/usr/local/mpi/lib:"
+
 /opt/amazon/openmpi/bin/mpirun --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    -x NCCL_DEBUG=VERSION \
-    --hostfile /shared/rejin/hosts_64x \
-    -x LD_LIBRARY_PATH \
+    --hostfile /shared/hostfile \
+    -x LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
     -x PATH \
     -N 8 \
-    -x FI_PROVIDER="efa" \
+    -x RDMAV_FORK_SAFE=1 -x NCCL_DEBUG=info \
+    -x FI_EFA_USE_DEVICE_RDMA=1 \
+    --mca pml ^cm --bind-to none \
     --oversubscribe \
-    --bind-to none \
     bash launcher.sh \
-    /shared/rejin/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
@@ -64,10 +66,10 @@ mkdir -p $BASEDIR/../baseline_1x_tape
         --training_file_pattern="/scratch/precalc_masks_latest/train*.tfrecord" \
         --validation_file_pattern="/shared/data2/val*.tfrecord" \
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
+	--warmup_file_pattern="/shared/dummydata_coco/*" \
         --amp \
         --use_batched_nms \
         --xla \
         --tf2 \
-        --profile_path="/shared/sboshin/horovod_first_epoch/" \
 	--preprocessed_data=${PRECALC_DATASET} \
         --use_custom_box_proposals_op | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log

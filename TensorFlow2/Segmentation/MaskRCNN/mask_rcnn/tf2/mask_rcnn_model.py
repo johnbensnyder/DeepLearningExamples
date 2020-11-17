@@ -910,7 +910,6 @@ class SessionModel(object):
         return config
     
 class TapeModel(object):
-    
     def __init__(self, params, train_input_fn=None, eval_input_fn=None, warmup_input_fn=None, is_training=True):
         self.params = params
 
@@ -918,7 +917,6 @@ class TapeModel(object):
         self.forward = MRCNN(self.params.values(), is_training=is_training)
         self.model_dir = self.params.model_dir
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
-        self.train_ds = train_input_fn(train_params)
         self.train_tdf = iter(train_input_fn(train_params)) \
                             if train_input_fn else None
         warmup_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
@@ -940,15 +938,14 @@ class TapeModel(object):
 
     def convergence_checker(self):
         my_file_b = Path("/shared/rejin/b_converged")
-        my_file_s = Path("/shared/rejin/s_converged")
+        my_file_s = Path("/shared/rejin/s_converged")        
         while True:
             if my_file_b.is_file() and my_file_s.is_file():
                 print("Convergence reached.")
                 print(f'Time taken is: {time.time() - self.st}')
                 os.remove("/shared/rejin/b_converged")
                 os.remove("/shared/rejin/s_converged")
-                #sys.exit(0)
-            time.sleep(0.1)
+            time.sleep(1)
                 
     def load_weights(self):
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)
@@ -1103,33 +1100,19 @@ class TapeModel(object):
     
     def initialize_model(self):
 
-        if MPI_rank(is_herring())==0:
-          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
-                                                      self.params.warmup_steps, flush=True)
-          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
-          print(self.optimizer.iterations, flush=True)
-
-        #self.optimizer.learning_rate = 0
-        #features, labels = next(self.warmup_tdf)
-#        features['images'] = tf.zeros_like(features['images'])
-        #model_outputs = self.forward(features, labels, self.params.values(), True)
-        #b_w = tf.convert_to_tensor(True)
-        #b_o = tf.convert_to_tensor(True)
-        #loss_dict = self.train_step(features, labels, b_w, b_o)
-        #self.load_weights()
         steps = 231
-        
+
         #features, labels = next(self.train_tdf)
         for i in range(steps):
           _, _ = next(self.warmup_tdf)
 #          _, _ = next(self.train_tdf)
-#        
+#
         if MPI_rank(is_herring())==0:
            logging.info("Initializing model")
            p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
-           loss_history = []    
+           loss_history = []
         else:
-           p_bar = range(steps)          
+           p_bar = range(steps)
         for i in p_bar:
           if i==0:
               b_w, b_o = True, True
@@ -1137,78 +1120,22 @@ class TapeModel(object):
               b_w, b_o = False, True
           else:
               b_w, b_o = False, False
-        
+
           b_w = tf.convert_to_tensor(b_w)
           b_o = tf.convert_to_tensor(b_o)
           features, labels = next(self.warmup_tdf)
-#          features['images'] = tf.zeros_like(features['images']) 
+#          features['images'] = tf.zeros_like(features['images'])
           loss_dict = self.train_step(features, labels, b_w, b_o)
           if MPI_rank()==0:
             loss_history.append(loss_dict['total_loss'].numpy())
             step = self.optimizer.iterations
             learning_rate = self.schedule(step)
-            if(learning_rate > 0):
-              print(learning_rate, step)
-            p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
+            #if(learning_rate > 0):
+            #  print(learning_rate, step)
+            p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]),
                                                                 learning_rate))
-          
-          #assert features != features1
-          
-          #prediction = self.predict(features)s
-        #print(self.forward.trainable_variables, flush=True)
-        # optimizer, _ = self.get_optimizer()
-        # grads_and_vars = []
-        # gradients = [np.zeros(v.shape) for v in self.forward.trainable_variables]
-        # for grad, var in zip(gradients, self.forward.trainable_variables):
-        #   if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
-        #       grad = 2.0 * grad
-        #   grads_and_vars.append((grad, var))
-
-        
-        # def opt_warmup(gv):
-        #   for _ in range(steps):
-        #     optimizer.apply_gradients(gv) 
-
-        # opt_warmup(grads_and_vars)
-        del self.warmup_tdf
-        
-        #herring.broadcast_variables(self.forward.variables, 0)
-        # if MPI_rank(is_herring())==0:
-        #    logging.info("Initializing model")
-        #    p_bar =tqdm(range(steps), bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')    
-        # else:
-        #    p_bar = range(steps)
-        # times = []
-        # for i in p_bar:
-        #   if i == 0:
-        #       b_w, b_o = True, True
-        #   else:
-        #       b_w, b_o = False, False
-            
-        #   tstart=time.perf_counter()
-        #   features, labels = next(self.warmup_tdf)
-        #   b_w = tf.convert_to_tensor(b_w)
-        #   b_o = tf.convert_to_tensor(b_o)
-        #   loss_dict = self.train_step(features, labels, b_w, b_o, True)
-        #   times.append(time.perf_counter()-tstart)
-        # logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times)*1000.} +/- {np.std(times)*1000.} ms")
-
-        # old_iterations = self.optimizer.iterations
-        # if MPI_rank(is_herring())==0:
-        #   print(self.optimizer.iterations, self.optimizer.learning_rate, flush=True)
-          
-        # self.optimizer, self.schedule = self.get_optimizer()
-        # self.optimizer.iterations = old_iterations
-        # old_iterations.assign(0)
-
-        if MPI_rank(is_herring())==0:
-
-          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
-                                                      self.params.warmup_steps, flush=True)
-          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
-          print(self.optimizer.iterations, self.optimizer.learning_rate, flush=True)
-#        
         self.load_weights()
+    
         
     def initialize_eval_model(self, features):
         for _ in range(5):
@@ -1218,7 +1145,6 @@ class TapeModel(object):
         self.cocoGt = COCO(annotation_file=self.params.val_json_file, use_ext=self.params.use_ext)
           
     def train_epoch(self, steps, broadcast=False, profile=None):
-        import herringcommon as hc
         #steps = 80
         if MPI_rank(is_herring())==0:
             logging.info("Starting training loop")
