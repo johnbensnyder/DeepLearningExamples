@@ -39,12 +39,13 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --lr_schedule="cosine" \
         --model_dir="$BASEDIR/../results_tf2_64x_novo_$1" \
         --num_steps_per_eval=231 \
-        --warmup_learning_rate=0.000133 \
+	--swa_start_epoch=14 \
+        --warmup_learning_rate=0.00133 \
 	--beta1=0.9 \
-	--beta2=0.25 \
+	--beta2=0.35 \
 	--warmup_steps=1000 \
         --total_steps=4158 \
-        --l2_weight_decay=1.275e-3 \
+        --l2_weight_decay=1.1e-3 \
 	--label_smoothing=0.1 \
         --train_batch_size=1 \
         --eval_batch_size=1 \

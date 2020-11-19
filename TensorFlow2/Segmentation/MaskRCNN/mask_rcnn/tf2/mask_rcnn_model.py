@@ -973,12 +973,12 @@ class TapeModel(object):
                                                          swa_steps + 2 * averaging_interval,
                                                          alpha=0.001)
 
-        averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(self.params.init_learning_rate * 0.5,
+        averaging_schedule = tf.keras.optimizers.schedules.PolynomialDecay(self.params.init_learning_rate * 0.2,
                                                                             averaging_interval,
                                                                             end_learning_rate=0.0,
                                                                             power=1.0,
-                                                                            cycle=True)
-        schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, self.params.init_learning_rate * 0.01, init_steps=231)
+                                                                            cycle=False)
+        schedule = warmup_scheduler.SWAScheduler(main_schedule, averaging_schedule, self.params.warmup_learning_rate, self.params.warmup_steps, swa_steps, averaging_interval, init_steps=231)
         if self.params.optimizer_type=="SGD":
             opt = tf.keras.optimizers.SGD(learning_rate=schedule, 
                                           momentum=self.params.momentum)
@@ -991,7 +991,8 @@ class TapeModel(object):
                                           weight_decay=self.params.l2_weight_decay,
                                           exclude_from_weight_decay=['bias', 'beta', 'batch_normalization'])
 
-            opt = optimizers.SWA(base_opt, start_averaging=swa_steps-1, average_period=averaging_interval)
+            #opt = optimizers.SWA(base_opt, start_averaging=swa_steps-1, average_period=int(averaging_interval))
+            opt = base_opt
         else:
             raise NotImplementedError
         if self.params.amp:
@@ -1115,11 +1116,11 @@ class TapeModel(object):
     
     def initialize_model(self):
 
-        if MPI_rank(is_herring())==0:
-          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
-                                                      self.params.warmup_steps, flush=True)
-          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
-          print(self.optimizer.iterations, flush=True)
+##        if MPI_rank(is_herring())==0:
+##          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
+##                                                      self.params.warmup_steps, flush=True)
+##          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
+##          print(self.optimizer.iterations, flush=True)
 
         #self.optimizer.learning_rate = 0
         #features, labels = next(self.warmup_tdf)
@@ -1213,12 +1214,12 @@ class TapeModel(object):
         # self.optimizer.iterations = old_iterations
         # old_iterations.assign(0)
 
-        if MPI_rank(is_herring())==0:
-
-          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
-                                                      self.params.warmup_steps, flush=True)
-          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
-          print(self.optimizer.iterations, self.optimizer.learning_rate, flush=True)
+##        if MPI_rank(is_herring())==0:
+##
+##          print(self.params.lr_schedule, self.params.init_learning_rate, self.params.total_steps, self.params.warmup_learning_rate,
+##                                                      self.params.warmup_steps, flush=True)
+##          print(self.schedule, self.schedule.__dict__, self.schedule.schedule.__dict__, flush=True)
+##          print(self.optimizer.iterations, self.optimizer.learning_rate, flush=True)
 #        
         self.load_weights()
         
@@ -1291,6 +1292,7 @@ class TapeModel(object):
                     loss_history.append(loss_dict['total_loss'].numpy())
                     step = self.optimizer.iterations
                     learning_rate = self.schedule(step)
+                    tf.print(learning_rate)
                     p_bar.set_description("Loss: {0:.4f}, LR: {1:.7f}".format(mean(loss_history[-50:]), 
                                                                             learning_rate))
             

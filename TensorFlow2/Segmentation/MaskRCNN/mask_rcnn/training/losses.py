@@ -630,7 +630,7 @@ def fast_rcnn_loss(class_outputs, box_outputs, class_targets, box_targets, rpn_b
                 class_targets=class_targets,
                 class_outputs=class_outputs,
                 loss_type=params['box_loss_type'],
-                normalizer=2.0
+                normalizer=1.5 # 2.0
             )
 
         box_loss *= params['fast_rcnn_box_loss_weight']

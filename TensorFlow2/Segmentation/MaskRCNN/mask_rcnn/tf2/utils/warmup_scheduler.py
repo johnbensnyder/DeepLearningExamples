@@ -45,15 +45,15 @@ class SWAScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
     """
     
     def __init__(self, main_schedule, averaging_schedule, initial_learning_rate,
-                    warmup_steps, swa_steps, swa_constant_lr, warmup_type='linear',
+                    warmup_steps, swa_steps, swa_averaging_steps, warmup_type='linear',
                     init_steps=0, dtype=tf.float32):
         super(SWAScheduler, self).__init__()
-        self.schedule = self.main_schedule = main_schedule
+        self.main_schedule = main_schedule
         self.averaging_schedule = averaging_schedule
         self.initial_learning_rate = tf.cast(initial_learning_rate, dtype)
         self.warmup_steps = tf.cast(warmup_steps, dtype)
         self.swa_steps = tf.cast(swa_steps, dtype)
-        self.swa_constant_lr = swa_constant_lr
+        self.swa_averaging_steps = swa_averaging_steps
         self.warmup_type = warmup_type
         self.init_steps = init_steps
         self.dtype = dtype
@@ -70,7 +70,7 @@ class SWAScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
         if global_step_recomp >= self.warmup_steps and global_step_recomp < self.swa_steps:
             return self.main_schedule(global_step_recomp)
         elif global_step_recomp >= self.swa_steps:
-            return self.averaging_schedule(global_step_recomp - self.swa_steps)
+            return self.averaging_schedule((global_step_recomp - self.swa_steps) % self.swa_averaging_steps)
         else:
             return self.compute_linear_warmup(global_step_recomp)
 
@@ -79,6 +79,6 @@ class SWAScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
         schedule_config['initial_learning_rate'] = self.initial_learning_rate
         schedule_config['warmup_steps'] = self.warmup_steps
         schedule_config['swa_steps'] = self.swa_steps
-        schedule_config['swa_constant_lr'] = self.swa_constant_lr
+        schedule_config['swa_averaging_steps'] = self.swa_averaging_steps
         schedule_config['warmup_type'] = self.warmup_type
 
