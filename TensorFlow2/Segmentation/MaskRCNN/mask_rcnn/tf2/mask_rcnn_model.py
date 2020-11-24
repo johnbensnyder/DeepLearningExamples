@@ -1030,7 +1030,7 @@ class TapeModel(object):
 
         if is_herring():
             if MPI_is_distributed(True):
-                tape = herring.DistributedGradientTape(tape)
+                tape = herring.DistributedGradientTape(tape,compression=herring.Compression.fp16)
             if self.params.amp:
                 scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
                 gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
@@ -1213,7 +1213,7 @@ class TapeModel(object):
         logging.info(f"Rank={MPI_rank()} Avg step time {np.mean(times)*1000.} +/- {np.std(times)*1000.} ms")
         
         if MPI_rank(is_herring()) == 0:
-            if self.epoch_num == 15:
+            if self.epoch_num == 14:
                 print(f'Total time is {time.time() - self.st}')
             #print(f'average step time={np.mean(timings[10:])} +/- {np.std(timings[10:])}')
             print("Saving checkpoint...")
@@ -1361,12 +1361,12 @@ class TapeModel(object):
           #Rank 0 is bbox, Rank 1 is Segm
           if(MPI_rank(is_herring()) == 0):
             print(f"acc:{scores[0]}")
-            if scores[0] > 0.377:
+            if scores[0] >= 0.377:
               print("#"*20, f"BBOX CONVERGED to {scores[0]}")
               open('/shared/rejin/b_converged', 'a').close()
           if(MPI_rank(is_herring()) == 1):
             print(f"acc:{scores[1]}")
-            if scores[1] > 0.339:
+            if scores[1] >= 0.339:
               print("#"*20, f"SEGM CONVERGED to {scores[1]}")
               open('/shared/rejin/s_converged', 'a').close()
 

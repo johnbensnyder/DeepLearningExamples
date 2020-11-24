@@ -33,7 +33,7 @@ os.environ['TF_GPU_THREAD_COUNT'] = '1'
 os.environ["TF_NUM_INTRAOP_THREADS"]="7"
 os.environ["TF_NUM_INTEROP_THREADS"]="6"
 os.environ["TF_XLA_FLAGS"] = '--tf_xla_enable_lazy_compilation=false --tf_xla_min_cluster_size=5'
-
+#os.environ["TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_WHITELIST_ADD"]= "BatchedBoxProposals"
 #for k,v in os.environ.items():
 #    print(f'{k} : {v}')
 #print()

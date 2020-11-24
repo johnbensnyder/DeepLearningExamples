@@ -29,20 +29,19 @@ LR_MULTIPLIER=0.001
 BASE_LR=$(echo $GLOBAL_BATCH_SIZE*$LR_MULTIPLIER | bc)
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-LD_LIBRARY_PATH="/usr/local/cuda/lib:/usr/local/cuda/efa/lib:/usr/local/cuda/lib64:/usr/local/lib:/usr/lib:/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/usr/local/cuda/lib:/opt/amazon/efa/lib:/usr/local/mpi/lib:"
 
 /opt/amazon/openmpi/bin/mpirun --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --mca btl_tcp_if_exclude lo,docker0 \
-    --hostfile /shared/eval_hostfile \
-    -x LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
+    --hostfile /shared/rejin/eval_nodes \
+    -x LD_LIBRARY_PATH \
     -x PATH \
     -N 8 \
     -x RDMAV_FORK_SAFE=1 -x NCCL_DEBUG=info \
-    -x FI_EFA_USE_DEVICE_RDMA=1 \
-    --mca pml ^cm --bind-to none \
+    -x FI_PROVIDER="efa" \
+    --bind-to none \
     --oversubscribe \
     bash launcher.sh \
-    python ${BASEDIR}/../mask_rcnn_eval.py \
+    /shared/sami/conda/bin/python ${BASEDIR}/../mask_rcnn_eval.py \
         --mode="train_and_eval" \
         --checkpoint="/home/ubuntu/sboshin/DeepLearningExamples/TensorFlow2/Segmentation/MaskRCNN/resnet/resnet-nhwc-2018-02-07/model.ckpt-112603" \
         --eval_samples=5000 \
@@ -67,7 +66,7 @@ LD_LIBRARY_PATH="/usr/local/cuda/lib:/usr/local/cuda/efa/lib:/usr/local/cuda/lib
         --val_json_file="/shared/data2/annotations/instances_val2017.json" \
         --amp \
         --xla \
-        --use_batched_nms \
+	 --use_batched_nms \
         --use_ext \
         --use_custom_box_proposals_op \
         --dist_coco_eval=2 \

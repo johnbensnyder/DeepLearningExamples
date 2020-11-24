@@ -25,9 +25,9 @@ rm -rf $BASEDIR/../results_tf2_64x_novo_$1
 mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
  
 
-/shared/rejin/conda/bin/herringrun  -n 64 -c /shared/rejin/conda \
+/shared/sami/conda/bin/herringrun  -n 64 -c /shared/sami/conda \
     RUN_HERRING=1 \
-    /shared/rejin/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
+    /shared/sami/conda/bin/python  ${BASEDIR}/bind_launch.py  --direct_launch=${DIRECT_LAUNCH} --nproc_per_node=${NUM_GPUS} --nsockets_per_node=2 --ncores_per_socket=24 ${BASEDIR}/../mask_rcnn_main.py \
         --mode="train_and_eval" \
 	--loop_mode="tape" \
 	--box_loss_type="giou" \
@@ -45,6 +45,7 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
 	--warmup_steps=1000 \
         --total_steps=4158 \
         --l2_weight_decay=1.275e-3 \
+	--global_gradient_clip_ratio=1.0 \
 	--label_smoothing=0.1 \
         --train_batch_size=1 \
         --eval_batch_size=1 \
@@ -60,4 +61,4 @@ mkdir -p $BASEDIR/../results_tf2_64x_novo_$1
         --use_batched_nms \
         --xla \
         --tf2 \
-        --use_custom_box_proposals_op | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log
+        --use_custom_box_proposals_op_batched | tee $BASEDIR/../results_tf2_64x_novo_$1/train_eval.log
