@@ -307,6 +307,20 @@ def gather_result_from_all_processes(local_results, root=0):
     res = comm.gather(local_results,root=root)
     return res
 
+def gather_result_from_all_processes_rubik(local_results, root=0):
+    import smdistributed.modelparallel.tensorflow as smp
+    rank_type = smp.RankType.DP_RANK
+    if smp.dp_rank() == root:
+        res = [local_results]
+        for i in range(smp.dp_size()):
+            if i != smp.mp_rank():
+                output.append(smp.recv_from(i, rank_type))
+        return res
+    else:
+        smp.send(local_results, root, rank_type)
+        return None
+    
+
 
 def evaluate(eval_estimator,
              input_fn,

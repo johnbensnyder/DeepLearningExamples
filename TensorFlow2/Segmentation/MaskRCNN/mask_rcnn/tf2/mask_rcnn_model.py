@@ -30,7 +30,6 @@ import multiprocessing
 from statistics import mean
 import threading
 from math import ceil
-from mpi4py import MPI
 from tqdm import tqdm
 import os
 
@@ -1098,6 +1097,7 @@ class TapeModel(object):
         else:
             converted_predictions = []
             worker_source_ids = []
+        from mpi4py import MPI
         MPI.COMM_WORLD.barrier()
         predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
         source_ids_list = evaluation.gather_result_from_all_processes(worker_source_ids)

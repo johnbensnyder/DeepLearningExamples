@@ -12,6 +12,7 @@ os.environ['TF_AUTOTUNE_THRESHOLD'] = '2'
 from mask_rcnn.utils.logging_formatter import logging
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
 from mask_rcnn.tf2.mask_rcnn_model import TapeModel
+from mask_rcnn.tf2.mask_rcnn_model_rubik import RubikModel
 from mask_rcnn.utils.herring_env import is_herring
 import tensorflow as tf
 
@@ -25,8 +26,9 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
             tf.config.set_visible_devices(gpus[herring.local_rank()], 'GPU')
     else:
         if MPI_is_distributed(False):
-            import horovod.tensorflow as hvd
-            hvd.init()
+            if not run_config.rubik:
+                import horovod.tensorflow as hvd
+                hvd.init()
             
         devices = tf.config.list_physical_devices('GPU')
         tf.config.set_visible_devices([devices[MPI_local_rank()]], 'GPU')
@@ -35,8 +37,13 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
     tf.config.optimizer.set_experimental_options({"auto_mixed_precision": run_config.amp})
     tf.config.optimizer.set_jit(run_config.xla)
     total_epochs = ceil(run_config.total_steps/run_config.num_steps_per_eval)
-    mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn)
-    mrcnn_model.initialize_model()
+    if not run_config.rubik:
+        mrcnn_model = TapeModel(run_config, train_input_fn, eval_input_fn)
+    else:
+        mrcnn_model = RubikModel(run_config, train_input_fn, eval_input_fn)
+
+    if not run_config.rubik:
+        mrcnn_model.initialize_model()
     eval_workers = min(MPI_size(is_herring()), 32)
     
     if run_config.offload_eval:

@@ -135,6 +135,22 @@ def main(argv):
     dllogger.init(backends=[dllogger.JSONStreamBackend(verbosity=dllogger.Verbosity.VERBOSE,
                                                            filename=RUN_CONFIG.log_path)])
 
+    if RUN_CONFIG.rubik:
+        import smdistributed.modelparallel.tensorflow as smp
+        cfg = {
+                "microbatches": 2,
+                "horovod": True,
+                "placement_strategy": "spread",
+                "partitions": 2,
+                "xla": True,
+                "pipeline": "interleaved",
+                "optimize": "speed",
+                "auto_partition": False,
+                "default_partition": 0,
+            }
+        smp.init(cfg)
+        print(f"[{smp.rank()}] rubik config {cfg}")
+    
     if RUN_CONFIG.mode in ('train', 'train_and_eval'):
         
         if RUN_CONFIG.static_data:
@@ -148,7 +164,8 @@ def main(argv):
                 use_fake_data=RUN_CONFIG.use_fake_data,
                 use_instance_mask=RUN_CONFIG.include_mask,
                 seed=RUN_CONFIG.seed,
-                disable_options=RUN_CONFIG.disable_data_options
+                disable_options=RUN_CONFIG.disable_data_options,
+                rubik=RUN_CONFIG.rubik
             )
 
     else:
@@ -163,7 +180,8 @@ def main(argv):
             use_fake_data=False,
             use_instance_mask=RUN_CONFIG.include_mask,
             seed=RUN_CONFIG.seed,
-            disable_options=RUN_CONFIG.disable_data_options
+            disable_options=RUN_CONFIG.disable_data_options,
+            rubik=RUN_CONFIG.rubik
         )
 
     else:

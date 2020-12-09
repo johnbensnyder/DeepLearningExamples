@@ -62,7 +62,6 @@ from math import ceil
 import numpy as np
 from tqdm import tqdm
 from mask_rcnn.utils.distributed_utils import MPI_is_distributed, MPI_rank, MPI_size, MPI_local_rank
-from mpi4py import MPI
 import horovod.tensorflow as hvd
 hvd.init()
 

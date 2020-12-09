@@ -53,7 +53,8 @@ class InputReader(object):
         use_fake_data=False,
         use_instance_mask=False,
         seed=None,
-        disable_options=False
+        disable_options=False,
+        rubik=False
     ):
 
         self._mode = mode
@@ -63,6 +64,7 @@ class InputReader(object):
         self._use_instance_mask = use_instance_mask
         self._seed = seed
         self._disable_options = disable_options
+        self._rubik = rubik
 
     def _create_dataset_parser_fn(self, params):
         """Create parser for parsing input data (dictionary)."""
@@ -76,17 +78,25 @@ class InputReader(object):
         )
 
     def __call__(self, params, input_context=None):
+        
+        if self._rubik:
+            import smdistributed.modelparallel.tensorflow as smp
+            rank = smp.dp_rank()
+            size = smp.dp_size()
+        else:
+            rank = MPI_rank()
+            size = MPI_size()
 
         batch_size = params['batch_size'] if 'batch_size' in params else 1
         do_dist_eval = params['dist_eval']
         
         try:
-            seed = params['seed'] if not MPI_is_distributed() else params['seed'] * MPI_rank()
+            seed = params['seed'] if not MPI_is_distributed() else params['seed'] * rank
         except (KeyError, TypeError):
             seed = None
 
         if MPI_is_distributed():
-            n_gpus = MPI_size()
+            n_gpus = size
 
         elif input_context is not None:
             n_gpus = input_context.num_input_pipelines
@@ -131,7 +141,7 @@ class InputReader(object):
 
             elif MPI_is_distributed():
                 logging.info("Using Dataset Sharding with Horovod")
-                _shard_idx, _num_shards = MPI_rank_and_size()
+                _shard_idx, _num_shards = rank, size
 
             try:
                 dataset = dataset.shard(
@@ -146,7 +156,7 @@ class InputReader(object):
             # 32 validation tf records - distribute on upto 32 workers
             if MPI_is_distributed():
                 logging.info("Using Evaluation Dataset Sharding with Horovod")
-                _shard_idx, _num_shards = MPI_rank_and_size()
+                _shard_idx, _num_shards = rank, size
                 max_shards = min(_num_shards, 32)
                 try:
                     dataset = dataset.shard(
