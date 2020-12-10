@@ -44,6 +44,28 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
 
     if not run_config.rubik:
         mrcnn_model.initialize_model()
+
+    if run_config.one_step_test:
+        import horovod.tensorflow as hvd
+        train_params = dict(run_config.values(), batch_size=run_config.train_batch_size)
+        train_tdf = iter(train_input_fn(train_params))
+        features, labels = next(train_tdf)
+        if not run_config.rubik:
+            losses = mrcnn_model.test_step(features, labels)
+            hvd.broadcast_variables(mrcnn_model.forward.variables, root_rank=0)
+            losses = mrcnn_model.test_step(features, labels)
+            print(f"rank {MPI_rank(is_herring())} losses {losses}")
+        else:
+            import smdistributed.modelparallel.tensorflow as smp
+            losses = mrcnn_model.test_step(features, labels)
+            if smp.mp_rank() == 0:
+                mrcnn_model.load_weights()
+            smp.barrier()
+            hvd.broadcast_variables(mrcnn_model.forward.variables, root_rank=0)
+            losses = mrcnn_model.test_step(features, labels)
+            print(f"rank {smp.rank()} dp_rank {smp.dp_rank()} losses {losses}")
+        return
+
     eval_workers = min(MPI_size(is_herring()), 32)
     
     if run_config.offload_eval:

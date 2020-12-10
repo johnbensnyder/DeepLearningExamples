@@ -28,6 +28,12 @@ def define_hparams_flags():
         help='Run with rubik.'
     )
 
+    flags.DEFINE_bool(
+        'one_step_test',
+        default=False,
+        help='Just run one fwd step for test.'
+    )
+
     flags.DEFINE_string(
         'log_path',
         default="./mrcnn.json",

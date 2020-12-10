@@ -27,6 +27,8 @@ import subprocess
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_op=0,executor=0'
+os.environ['TF_CUDNN_DETERMINISTIC']='1'
+os.environ['PYTHONHASHSEED'] = str(1234)
 # os.environ["TF_XLA_FLAGS"] = 'tf_xla_print_cluster_outputs=1'
 
 from absl import app
@@ -55,6 +57,8 @@ from mask_rcnn.hyperparameters.cmdline_utils import define_hparams_flags
 
 from mask_rcnn.utils.logging_formatter import log_cleaning
 import dllogger
+import random
+import numpy as np
 
 FLAGS = define_hparams_flags()
 
@@ -113,6 +117,12 @@ def main(argv):
     
     # ============================ Configure parameters ============================ #
 
+
+    # Set random seeds
+    print(f"Use random seed {RUN_CONFIG.seed}")
+    random.seed(RUN_CONFIG.seed)
+    np.random.seed(RUN_CONFIG.seed)
+    tf.random.set_seed(RUN_CONFIG.seed)
 
     
     if RUN_CONFIG.use_tf_distributed and MPI_is_distributed():

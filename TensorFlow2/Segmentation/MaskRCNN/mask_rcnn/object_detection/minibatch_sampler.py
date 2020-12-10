@@ -83,7 +83,8 @@ class MinibatchSampler(object):
       a boolean tensor with the same shape as input (indicator) tensor
     """
     indices = tf.where(indicator)
-    indices = tf.random.shuffle(indices)
+    # (fewu) This always deliver random result, even the tf.random.set_seed is set
+    #indices = tf.random.shuffle(indices, seed=1234)
     indices = tf.reshape(indices, [-1])
 
     num_samples = tf.minimum(tf.size(input=indices), num_samples)

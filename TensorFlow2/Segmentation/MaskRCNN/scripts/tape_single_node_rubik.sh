@@ -73,4 +73,5 @@ mpirun --allow-run-as-root --mca plm_rsh_no_tree_spawn 1 \
         --xla \
         --tf2 \
         --rubik \
+        --seed 1234 \
         --use_custom_box_proposals_op | tee $BASEDIR/../baseline_1x/baseline_1x.log

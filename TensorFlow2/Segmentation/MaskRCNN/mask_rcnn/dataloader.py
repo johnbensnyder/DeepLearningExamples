@@ -91,7 +91,7 @@ class InputReader(object):
         do_dist_eval = params['dist_eval']
         
         try:
-            seed = params['seed'] if not MPI_is_distributed() else params['seed'] * rank
+            seed = params['seed'] if not MPI_is_distributed() else (params['seed'] + rank)
         except (KeyError, TypeError):
             seed = None
 
@@ -148,7 +148,7 @@ class InputReader(object):
                     num_shards=_num_shards,
                     index=_shard_idx
                 )
-                dataset = dataset.shuffle(math.ceil(256 / _num_shards))
+                dataset = dataset.shuffle(math.ceil(256 / _num_shards), seed=seed)
 
             except NameError:  # Not a distributed training setup
                 pass
