@@ -1115,8 +1115,10 @@ class RubikModel(object):
 
             delta_t = time.perf_counter() - tstart
             timings.append(delta_t)
+            l2_loss = sum(smp.allgather(loss_dict['l2_regularization_loss'].numpy(), group))
+            loss_dict['total_loss'] = loss_dict['total_loss'].numpy() + (l2_loss - loss_dict['l2_regularization_loss'].numpy())
             if MPI_rank(is_herring())==0:
-                loss_history.append(loss_dict['total_loss'].numpy())
+                loss_history.append(loss_dict['total_loss'])
                 step = self.optimizer.iterations
                 learning_rate = self.schedule(step)
                 p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 

@@ -73,8 +73,11 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
                 mrcnn_model.load_weights()
             smp.barrier()
             hvd.broadcast_variables(mrcnn_model.forward.variables, root_rank=0)
-            losses = mrcnn_model.test_step(features, labels)
-            print(f"rank {smp.rank()} dp_rank {smp.dp_rank()} losses {losses}")
+            loss_dict = mrcnn_model.test_step(features, labels)
+            l2_loss = sum(smp.allgather(loss_dict['l2_regularization_loss'].numpy(), group))
+            loss_dict['total_loss'] = loss_dict['total_loss'].numpy() + (l2_loss - loss_dict['l2_regularization_loss'].numpy())
+            loss_dict['l2_regularization_loss'] = l2_loss
+            print(f"rank {smp.rank()} dp_rank {smp.dp_rank()} losses {loss_dict}")
         return
 
     eval_workers = min(MPI_size(is_herring()), 32)
