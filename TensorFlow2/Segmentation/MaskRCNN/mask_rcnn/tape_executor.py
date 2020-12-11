@@ -49,14 +49,25 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
         import horovod.tensorflow as hvd
         train_params = dict(run_config.values(), batch_size=run_config.train_batch_size)
         train_tdf = iter(train_input_fn(train_params))
-        features, labels = next(train_tdf)
         if not run_config.rubik:
+            features, labels = next(train_tdf)
             losses = mrcnn_model.test_step(features, labels)
             hvd.broadcast_variables(mrcnn_model.forward.variables, root_rank=0)
             losses = mrcnn_model.test_step(features, labels)
             print(f"rank {MPI_rank(is_herring())} losses {losses}")
         else:
             import smdistributed.modelparallel.tensorflow as smp
+            group = smp.MP_GROUP
+            rank_type = smp.RankType.MP_RANK
+            if smp.mp_rank() == 0:
+                features, labels = next(train_tdf)
+                for key, val in features.items():
+                    features[key] = val.numpy()
+                for key, val in labels.items():
+                    labels[key] = val.numpy()
+                features, labels = smp.broadcast((features, labels), group)
+            else:
+                features, labels = smp.recv_from(0, rank_type)
             losses = mrcnn_model.test_step(features, labels)
             if smp.mp_rank() == 0:
                 mrcnn_model.load_weights()

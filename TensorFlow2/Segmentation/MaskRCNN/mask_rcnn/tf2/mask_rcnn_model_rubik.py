@@ -1095,7 +1095,18 @@ class RubikModel(object):
                 b_w, b_o = False, False
             
             tstart = time.perf_counter()
-            features, labels = next(self.train_tdf)
+            ###### Broadcast the input to guarantee all mp ranks have the same input
+            group = smp.MP_GROUP
+            rank_type = smp.RankType.MP_RANK
+            if smp.mp_rank() == 0:
+                features, labels = next(train_tdf)
+                for key, val in features.items():
+                    features[key] = val.numpy()
+                for key, val in labels.items():
+                    labels[key] = val.numpy()
+                features, labels = smp.broadcast((features, labels), group)
+            else:
+                features, labels = smp.recv_from(0, rank_type)
             loss_dict = self.train_step(features, labels, b_w, b_o)
             if i == 0:
                 if smp.mp_rank() == 0:
