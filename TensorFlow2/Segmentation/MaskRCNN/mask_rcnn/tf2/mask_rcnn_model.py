@@ -847,8 +847,14 @@ class TapeModel(object):
         self.epoch_num = 0
 
     def load_weights(self):
+        weight_names = []
+        for weight in self.forward.layers[0].weights:
+            name = weight.name
+            for load_weight_name in eager_mapping.resnet_vars:
+                if load_weight_name in name:
+                    weight_names.append(load_weight_name)
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)
-        weights = [chkp.get_tensor(i) for i in eager_mapping.resnet_vars]
+        weights = [chkp.get_tensor(i) for i in weight_names]
         self.forward.layers[0].set_weights(weights)
         
     def get_optimizer(self):
@@ -881,49 +887,49 @@ class TapeModel(object):
             opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, 'dynamic')
         return opt, schedule
 
-        @tf.function
-        def test_step(self, features, labels):
-            loss_dict = dict()
-            model_outputs = self.forward(features, labels, self.params.values(), True)
-            loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
-                loss_dict['rpn_box_loss'] = losses.rpn_loss(
-                    score_outputs=model_outputs['rpn_score_outputs'],
-                    box_outputs=model_outputs['rpn_box_outputs'],
-                    labels=labels,
-                    params=self.params.values()
-                )
-            loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
-                loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
-                    class_outputs=model_outputs['class_outputs'],
-                    box_outputs=model_outputs['box_outputs'],
-                    class_targets=model_outputs['class_targets'],
-                    box_targets=model_outputs['box_targets'],
-                    rpn_box_rois=model_outputs['box_rois'],
-                    image_info=features['image_info'],
-                    params=self.params.values()
-                )
-            if self.params.include_mask:
-                loss_dict['mask_loss'] = losses.mask_rcnn_loss(
-                    mask_outputs=model_outputs['mask_outputs'],
-                    mask_targets=model_outputs['mask_targets'],
-                    select_class_targets=model_outputs['selected_class_targets'],
-                    params=self.params.values()
-                )
-            else:
-                loss_dict['mask_loss'] = 0.
-            if self.params.optimizer_type in ['LAMB', 'Novograd']: # decoupled weight decay
-                loss_dict['l2_regularization_loss'] = tf.constant(0.0)
-            else:
-                loss_dict['l2_regularization_loss'] = self.params.l2_weight_decay * tf.add_n([
-                    tf.nn.l2_loss(v)
-                    for v in self.forward.trainable_variables
-                    if not any([pattern in v.name for pattern in ["batch_normalization", "bias", "beta"]])
-                ])
-            loss_dict['total_loss'] = loss_dict['total_rpn_loss'] \
-                + loss_dict['total_fast_rcnn_loss'] + loss_dict['mask_loss'] \
-                + loss_dict['l2_regularization_loss']
+    @tf.function
+    def test_step(self, features, labels):
+        loss_dict = dict()
+        model_outputs = self.forward(features, labels, self.params.values(), True)
+        loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
+            loss_dict['rpn_box_loss'] = losses.rpn_loss(
+                score_outputs=model_outputs['rpn_score_outputs'],
+                box_outputs=model_outputs['rpn_box_outputs'],
+                labels=labels,
+                params=self.params.values()
+            )
+        loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
+            loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
+                class_outputs=model_outputs['class_outputs'],
+                box_outputs=model_outputs['box_outputs'],
+                class_targets=model_outputs['class_targets'],
+                box_targets=model_outputs['box_targets'],
+                rpn_box_rois=model_outputs['box_rois'],
+                image_info=features['image_info'],
+                params=self.params.values()
+            )
+        if self.params.include_mask:
+            loss_dict['mask_loss'] = losses.mask_rcnn_loss(
+                mask_outputs=model_outputs['mask_outputs'],
+                mask_targets=model_outputs['mask_targets'],
+                select_class_targets=model_outputs['selected_class_targets'],
+                params=self.params.values()
+            )
+        else:
+            loss_dict['mask_loss'] = 0.
+        if self.params.optimizer_type in ['LAMB', 'Novograd']: # decoupled weight decay
+            loss_dict['l2_regularization_loss'] = tf.constant(0.0)
+        else:
+            loss_dict['l2_regularization_loss'] = self.params.l2_weight_decay * tf.add_n([
+                tf.nn.l2_loss(v)
+                for v in self.forward.trainable_variables
+                if not any([pattern in v.name for pattern in ["batch_normalization", "bias", "beta"]])
+            ])
+        loss_dict['total_loss'] = loss_dict['total_rpn_loss'] \
+            + loss_dict['total_fast_rcnn_loss'] + loss_dict['mask_loss'] \
+            + loss_dict['l2_regularization_loss']
 
-            return loss_dict
+        return loss_dict
 
     @tf.function
     def train_step(self, features, labels, sync_weights=False, sync_opt=False):

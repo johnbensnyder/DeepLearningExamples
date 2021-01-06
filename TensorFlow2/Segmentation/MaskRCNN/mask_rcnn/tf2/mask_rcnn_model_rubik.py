@@ -1037,7 +1037,7 @@ class RubikModel(object):
                     grad = 2.0 * grad
                 grads.append(grad)
 
-            return grads, {'total_loss': loss_dict['total_loss']}#loss_dict
+            return grads, loss_dict
         
     @tf.function
     def train_step(self, features, labels, sync_weights=False, sync_opt=False):
@@ -1077,6 +1077,26 @@ class RubikModel(object):
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
     
+    def broadcast_input(self, training=True):
+        ###### Broadcast the input to guarantee all mp ranks have the same input
+        group = smp.MP_GROUP
+        rank_type = smp.RankType.MP_RANK
+        if smp.mp_rank() == 0:
+            if training:
+                features, labels = next(self.train_tdf)
+                for key, val in labels.items():
+                    labels[key] = val.numpy()
+            else:
+                features, labels = next(self.eval_tdf)['features'], None
+
+            for key, val in features.items():
+                features[key] = val.numpy()
+
+            features, labels = smp.broadcast((features, labels), group)
+        else:
+            features, labels = smp.recv_from(0, rank_type)
+        return features, labels
+
     def train_epoch(self, steps, broadcast=False):
         if MPI_rank(is_herring())==0:
             logging.info("Starting training loop")
@@ -1095,18 +1115,10 @@ class RubikModel(object):
                 b_w, b_o = False, False
             
             tstart = time.perf_counter()
-            ###### Broadcast the input to guarantee all mp ranks have the same input
-            group = smp.MP_GROUP
-            rank_type = smp.RankType.MP_RANK
-            if smp.mp_rank() == 0:
-                features, labels = next(train_tdf)
-                for key, val in features.items():
-                    features[key] = val.numpy()
-                for key, val in labels.items():
-                    labels[key] = val.numpy()
-                features, labels = smp.broadcast((features, labels), group)
-            else:
-                features, labels = smp.recv_from(0, rank_type)
+            features, labels = next(self.train_tdf)
+            # broadcast the input since there is randomness in the data pipeline
+            # But this will cause huge performance regression
+            #features, labels = self.broadcast_input()
             loss_dict = self.train_step(features, labels, b_w, b_o)
             if i == 0:
                 if smp.mp_rank() == 0:
@@ -1115,6 +1127,7 @@ class RubikModel(object):
 
             delta_t = time.perf_counter() - tstart
             timings.append(delta_t)
+            group = smp.MP_GROUP
             l2_loss = sum(smp.allgather(loss_dict['l2_regularization_loss'].numpy(), group))
             loss_dict['total_loss'] = loss_dict['total_loss'].numpy() + (l2_loss - loss_dict['l2_regularization_loss'].numpy())
             if MPI_rank(is_herring())==0:
@@ -1174,6 +1187,7 @@ class RubikModel(object):
         worker_predictions = dict()
         for i in p_bar:
             features = next(self.eval_tdf)['features']
+            #features, _ = self.broadcast_input(training=False)
             out = self.predict(features)
             for key, val in out.items():
                 out[key] = val.reduce_mean()
