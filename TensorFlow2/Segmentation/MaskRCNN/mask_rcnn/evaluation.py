@@ -313,7 +313,7 @@ def gather_result_from_all_processes_rubik(local_results, root=0):
     if smp.dp_rank() == root:
         res = [local_results]
         for i in range(smp.dp_size()):
-            if i != smp.mp_rank():
+            if i != root:
                 output.append(smp.recv_from(i, rank_type))
         return res
     else:

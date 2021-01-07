@@ -1190,7 +1190,8 @@ class RubikModel(object):
             #features, _ = self.broadcast_input(training=False)
             out = self.predict(features)
             for key, val in out.items():
-                out[key] = val.reduce_mean()
+                #out[key] = val.reduce_mean()
+                out[key] = val.merge()
             out = evaluation.process_prediction_for_eval(out)
             for k, v in out.items():
                 if k not in worker_predictions:
