@@ -314,7 +314,7 @@ def gather_result_from_all_processes_rubik(local_results, root=0):
         res = [local_results]
         for i in range(smp.dp_size()):
             if i != root:
-                output.append(smp.recv_from(i, rank_type))
+                res.append(smp.recv_from(i, rank_type))
         return res
     else:
         smp.send(local_results, root, rank_type)
