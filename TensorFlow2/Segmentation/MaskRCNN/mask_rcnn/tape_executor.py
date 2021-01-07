@@ -84,9 +84,9 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
         eval_workers = min(MPI_size(is_herring()), 32)
     else:
         #(TODO) fix the issue that eval can only run with the first dp rank
-        #import smdistributed.modelparallel.tensorflow as smp
-        #eval_workers = smp.dp_size()
-        eval_workers = 1
+        import smdistributed.modelparallel.tensorflow as smp
+        eval_workers = smp.dp_size()
+        #eval_workers = 1
         
     
     if run_config.offload_eval:
@@ -106,12 +106,12 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
             mrcnn_model.train_epoch(run_config.num_steps_per_eval, broadcast=epoch==0)
             if MPI_rank(is_herring())==0:
                 logging.info("Running epoch {} evaluation".format(epoch+1))
-            if not run_config.rubik:
-                mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval, 
-                                     use_ext=run_config.use_ext)
-            else:
-                import smdistributed.modelparallel.tensorflow as smp
-                if smp.dp_rank() == 0:
-                    mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval,
-                                         use_ext=run_config.use_ext)
-                smp.barrier()
+            #if not run_config.rubik:
+            mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval, 
+                                 use_ext=run_config.use_ext)
+            #else:
+            #    import smdistributed.modelparallel.tensorflow as smp
+            #    if smp.dp_rank() == 0:
+            #        mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval,
+            #                             use_ext=run_config.use_ext)
+            #    smp.barrier()

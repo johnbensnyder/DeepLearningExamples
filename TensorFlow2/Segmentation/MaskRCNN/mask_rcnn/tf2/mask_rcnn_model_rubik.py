@@ -1209,11 +1209,11 @@ class RubikModel(object):
             converted_predictions = []
             worker_source_ids = []
         #smp.barrier()
-        #if smp.mp_rank() == 0:
-        #    predictions_list = evaluation.gather_result_from_all_processes_rubik(converted_predictions)
-        #    source_ids_list = evaluation.gather_result_from_all_processes_rubik(worker_source_ids)
-        predictions_list = converted_predictions
-        source_ids_list = worker_source_ids
+        if smp.mp_rank() == 0:
+            predictions_list = evaluation.gather_result_from_all_processes_rubik(converted_predictions)
+            source_ids_list = evaluation.gather_result_from_all_processes_rubik(worker_source_ids)
+        #predictions_list = [converted_predictions]
+        #source_ids_list = [worker_source_ids]
 
         validation_json_file=self.params.val_json_file
         if MPI_rank(is_herring()) == 0:
