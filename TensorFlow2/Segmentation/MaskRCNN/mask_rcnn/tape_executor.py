@@ -111,7 +111,7 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
                                      use_ext=run_config.use_ext)
             else:
                 import smdistributed.modelparallel.tensorflow as smp
-                if smp.dp_size() == 0:
+                if smp.dp_rank() == 0:
                     mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval,
                                          use_ext=run_config.use_ext)
                 smp.barrier()
