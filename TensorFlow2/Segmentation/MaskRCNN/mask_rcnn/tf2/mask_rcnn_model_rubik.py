@@ -246,16 +246,11 @@ class MRCNN_RUBIK(smp.DistributedModel):
                                             )
     def call(self, features, labels, params, is_training=True):
         with smp.partition(0):
-            model_outputs = {}
             is_gpu_inference = not is_training and params['use_batched_nms']
             batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
             if 'source_ids' not in features:
                 features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
 
-            all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
-                                          params['num_scales'], params['aspect_ratios'],
-                                          params['anchor_scale'],
-                                          (image_height, image_width))
             backbone_feats = self.backbone_1(
                 features['images'],
                 training=is_training,
@@ -265,11 +260,17 @@ class MRCNN_RUBIK(smp.DistributedModel):
             #     training=is_training,
             # )
         with smp.partition(1):
+            model_outputs = {}
             backbone_feats_1 = self.backbone_2(
                 backbone_feats[3],
                 training=is_training,
             )
             backbone_feats.update(backbone_feats_1)
+
+            all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
+                                          params['num_scales'], params['aspect_ratios'],
+                                          params['anchor_scale'],
+                                          (image_height, image_width))
             fpn_feats = self.fpn(backbone_feats, training=is_training)
             rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
                                                         features=fpn_feats,
