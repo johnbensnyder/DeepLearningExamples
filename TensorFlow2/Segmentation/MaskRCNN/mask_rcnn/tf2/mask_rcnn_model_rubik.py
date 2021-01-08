@@ -208,7 +208,19 @@ class MRCNN_RUBIK(smp.DistributedModel):
     def __init__(self, params, is_training=True, **kwargs):
         super().__init__(**kwargs)
         is_gpu_inference = not is_training and params['use_batched_nms']
-        self.backbone = resnet.Resnet_Model(
+        # self.backbone = resnet.Resnet_Model(
+        #                                 "resnet50",
+        #                                 data_format='channels_last',
+        #                                 trainable=is_training,
+        #                                 finetune_bn=params['finetune_bn']
+        #                             )
+        self.backbone_1 = resnet.Resnet_Model_first(
+                                        "resnet50",
+                                        data_format='channels_last',
+                                        trainable=is_training,
+                                        finetune_bn=params['finetune_bn']
+                                    )
+        self.backbone_2 = resnet.Resnet_Model_second(
                                         "resnet50",
                                         data_format='channels_last',
                                         trainable=is_training,
@@ -244,11 +256,20 @@ class MRCNN_RUBIK(smp.DistributedModel):
                                           params['num_scales'], params['aspect_ratios'],
                                           params['anchor_scale'],
                                           (image_height, image_width))
-            backbone_feats = self.backbone(
+            backbone_feats = self.backbone_1(
                 features['images'],
                 training=is_training,
             )
+            # backbone_feats = self.backbone(
+            #     features['images'],
+            #     training=is_training,
+            # )
         with smp.partition(1):
+            backbone_feats_1 = self.backbone_2(
+                backbone_feats[3],
+                training=is_training,
+            )
+            backbone_feats.update(backbone_feats_1)
             fpn_feats = self.fpn(backbone_feats, training=is_training)
             rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
                                                         features=fpn_feats,

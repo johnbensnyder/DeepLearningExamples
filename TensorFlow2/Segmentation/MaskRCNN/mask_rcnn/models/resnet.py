@@ -803,3 +803,266 @@ class Resnet_Model(tf.keras.models.Model):
         )
 
         return {2: c2, 3: c3, 4: c4, 5: c5}
+
+class Resnet_Model_first(tf.keras.models.Model):
+    def __init__(self, resnet_model, data_format='channels_last', trainable=True, finetune_bn=False, norm_type='batchnorm', *args, **kwargs):
+        """
+        Our actual ResNet network.  We return the output of c2, c3,c4,c5
+        N.B. batch norm is always run with trained parameters, as we use very small
+        batches when training the object layers.
+
+        Args:
+        resnet_model: model type. Authorized Values: (resnet18, resnet34, resnet50, resnet101, resnet152, resnet200)
+        data_format: `str` either "channels_first" for
+          `[batch, channels, height, width]` or "channels_last for `[batch, height, width, channels]`.
+        finetune_bn: `bool` for whether the model is training.
+
+        Returns the ResNet model for a given size and number of output classes.
+        """
+        model_params = {
+            'resnet18': {'block': ResidualBlock, 'layers': [2, 2, 2, 2]},
+            'resnet34': {'block': ResidualBlock, 'layers': [3, 4, 6, 3]},
+            'resnet50': {'block': BottleneckBlock, 'layers': [3, 4, 6, 3]},
+            'resnet101': {'block': BottleneckBlock, 'layers': [3, 4, 23, 3]},
+            'resnet152': {'block': BottleneckBlock, 'layers': [3, 8, 36, 3]},
+            'resnet200': {'block': BottleneckBlock, 'layers': [3, 24, 36, 3]}
+        }
+
+        if resnet_model not in model_params:
+            raise ValueError('Not a valid resnet_model: %s' % resnet_model)
+
+        super(Resnet_Model, self).__init__(trainable=trainable, name=resnet_model, *args, **kwargs)
+
+        self._finetune_bn = finetune_bn
+        self.norm_type = norm_type
+        self._data_format = data_format
+        self._block_layer = model_params[resnet_model]['block']
+        self._n_layers = model_params[resnet_model]['layers']
+        self._local_layers = dict()
+        if norm_type == 'batchnorm':
+            self._local_layers["conv2d"] = Conv2dFixedPadding(
+                filters=64,
+                kernel_size=7,
+                strides=2,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=False
+            )
+
+            self._local_layers["batchnorm"] = BNReLULayer(
+                relu=True,
+                init_zero=False,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=False
+            )
+            self._local_layers["maxpool2d"] = tf.keras.layers.MaxPool2D(
+                pool_size=3,
+                strides=2,
+                padding='SAME',
+                data_format=self._data_format
+            )
+
+            self._local_layers["block_1"] = BlockGroup(
+                filters=64,
+                strides=1,
+                n_blocks=self._n_layers[0],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=False,
+                finetune_bn=False
+            )
+
+            self._local_layers["block_2"] = BlockGroup(
+                filters=128,
+                strides=2,
+                n_blocks=self._n_layers[1],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn
+            )
+        elif norm_type == 'groupnorm':
+            self._local_layers["conv2d"] = Conv2dFixedPadding(
+                    filters=64,
+                    kernel_size=7,
+                    strides=2,
+                    data_format=self._data_format,
+                    trainable=False
+                )
+
+            self._local_layers["groupnorm"] = GNReLULayer(
+                    relu=True,
+                    init_zero=False,
+                    data_format=self._data_format,
+                    trainable=True
+                )
+            self._local_layers["maxpool2d"] = tf.keras.layers.MaxPool2D(
+                pool_size=3,
+                strides=2,
+                padding='SAME',
+                data_format=self._data_format
+            )
+
+            self._local_layers["block_1"] = BlockGroup(
+                filters=64,
+                strides=1,
+                n_blocks=self._n_layers[0],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                trainable=False,
+                finetune_bn=False,
+                norm_type=norm_type
+            )
+
+            self._local_layers["block_2"] = BlockGroup(
+                filters=128,
+                strides=2,
+                n_blocks=self._n_layers[1],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn,
+                norm_type=norm_type
+            )
+
+        else:
+            raise NotImplementedError
+            
+            
+
+    def call(self, inputs, training=True, *args, **kwargs):
+        """Creation of the model graph."""
+        net = self._local_layers["conv2d"](inputs=inputs)
+
+        if self.norm_type == 'batchnorm':
+            net = self._local_layers["batchnorm"](
+                inputs=net,
+                training=False
+            )
+        elif self.norm_type == 'groupnorm':
+                net = self._local_layers["groupnorm"](
+                inputs=net,
+                training=training
+            )
+
+        net = self._local_layers["maxpool2d"](net)
+
+        c2 = self._local_layers["block_1"](
+            inputs=net,
+            training=False,
+        )
+
+        c3 = self._local_layers["block_2"](
+            inputs=c2,
+            training=training,
+        )
+
+        return {2: c2, 3: c3}
+
+
+class Resnet_Model_second(tf.keras.models.Model):
+    def __init__(self, resnet_model, data_format='channels_last', trainable=True, finetune_bn=False, norm_type='batchnorm', *args, **kwargs):
+        """
+        Our actual ResNet network.  We return the output of c2, c3,c4,c5
+        N.B. batch norm is always run with trained parameters, as we use very small
+        batches when training the object layers.
+
+        Args:
+        resnet_model: model type. Authorized Values: (resnet18, resnet34, resnet50, resnet101, resnet152, resnet200)
+        data_format: `str` either "channels_first" for
+          `[batch, channels, height, width]` or "channels_last for `[batch, height, width, channels]`.
+        finetune_bn: `bool` for whether the model is training.
+
+        Returns the ResNet model for a given size and number of output classes.
+        """
+        model_params = {
+            'resnet18': {'block': ResidualBlock, 'layers': [2, 2, 2, 2]},
+            'resnet34': {'block': ResidualBlock, 'layers': [3, 4, 6, 3]},
+            'resnet50': {'block': BottleneckBlock, 'layers': [3, 4, 6, 3]},
+            'resnet101': {'block': BottleneckBlock, 'layers': [3, 4, 23, 3]},
+            'resnet152': {'block': BottleneckBlock, 'layers': [3, 8, 36, 3]},
+            'resnet200': {'block': BottleneckBlock, 'layers': [3, 24, 36, 3]}
+        }
+
+        if resnet_model not in model_params:
+            raise ValueError('Not a valid resnet_model: %s' % resnet_model)
+
+        super(Resnet_Model, self).__init__(trainable=trainable, name=resnet_model, *args, **kwargs)
+
+        self._finetune_bn = finetune_bn
+        self.norm_type = norm_type
+        self._data_format = data_format
+        self._block_layer = model_params[resnet_model]['block']
+        self._n_layers = model_params[resnet_model]['layers']
+        self._local_layers = dict()
+        if norm_type == 'batchnorm':
+            self._local_layers["block_3"] = BlockGroup(
+                filters=256,
+                strides=2,
+                n_blocks=self._n_layers[2],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn
+            )
+
+            self._local_layers["block_4"] = BlockGroup(
+                filters=512,
+                strides=2,
+                n_blocks=self._n_layers[3],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                # Freeze at conv2d and batchnorm first 11 layers based on reference model.
+                # Reference: https://github.com/facebookresearch/Detectron/blob/master/detectron/core/config.py#L194
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn
+            )
+        elif norm_type == 'groupnorm':
+            self._local_layers["block_3"] = BlockGroup(
+                filters=256,
+                strides=2,
+                n_blocks=self._n_layers[2],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn,
+                norm_type=norm_type
+            )
+
+            self._local_layers["block_4"] = BlockGroup(
+                filters=512,
+                strides=2,
+                n_blocks=self._n_layers[3],
+                block_layer=self._block_layer,
+                data_format=self._data_format,
+                trainable=self._trainable,
+                finetune_bn=self._finetune_bn,
+                norm_type=norm_type
+            )
+        else:
+            raise NotImplementedError
+            
+            
+
+    def call(self, inputs, training=True, *args, **kwargs):
+        """Creation of the model graph."""
+        c4 = self._local_layers["block_3"](
+            inputs=inputs,
+            training=training,
+        )
+
+        c5 = self._local_layers["block_4"](
+            inputs=c4,
+            training=training,
+        )
+
+        return {4: c4, 5: c5}
