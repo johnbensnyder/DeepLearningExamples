@@ -831,7 +831,7 @@ class Resnet_Model_first(tf.keras.models.Model):
         if resnet_model not in model_params:
             raise ValueError('Not a valid resnet_model: %s' % resnet_model)
 
-        super(Resnet_Model, self).__init__(trainable=trainable, name=resnet_model, *args, **kwargs)
+        super(Resnet_Model_first, self).__init__(trainable=trainable, name=resnet_model+"_first", *args, **kwargs)
 
         self._finetune_bn = finetune_bn
         self.norm_type = norm_type
@@ -994,7 +994,7 @@ class Resnet_Model_second(tf.keras.models.Model):
         if resnet_model not in model_params:
             raise ValueError('Not a valid resnet_model: %s' % resnet_model)
 
-        super(Resnet_Model, self).__init__(trainable=trainable, name=resnet_model, *args, **kwargs)
+        super(Resnet_Model_second, self).__init__(trainable=trainable, name=resnet_model+"_second", *args, **kwargs)
 
         self._finetune_bn = finetune_bn
         self.norm_type = norm_type
