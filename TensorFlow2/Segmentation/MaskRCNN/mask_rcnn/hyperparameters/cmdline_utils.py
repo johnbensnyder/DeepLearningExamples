@@ -34,6 +34,12 @@ def define_hparams_flags():
         help='Just run one fwd step for test.'
     )
 
+    flags.DEFINE_bool(
+        'one_step_eval',
+        default=False,
+        help='Just run one fwd step for eval.'
+    )
+
     flags.DEFINE_string(
         'log_path',
         default="./mrcnn.json",

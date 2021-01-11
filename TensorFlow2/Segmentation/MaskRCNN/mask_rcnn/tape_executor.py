@@ -88,7 +88,12 @@ def train_and_eval(run_config, train_input_fn, eval_input_fn):
         eval_workers = smp.dp_size()
         #eval_workers = 1
         
-    
+
+    if run_config.one_step_eval:
+        mrcnn_model.run_eval(run_config.eval_samples//(eval_workers * run_config.eval_batch_size), async_eval=run_config.async_eval,
+                             use_ext=run_config.use_ext)
+        return
+
     if run_config.offload_eval:
         for epoch in range(run_config.first_eval, total_epochs):
             if MPI_rank(is_herring())==0:
