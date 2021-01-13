@@ -1,0 +1,1 @@
+from .generic_roi_extractor import GenericRoIExtractor
