@@ -23,7 +23,7 @@ train_data = dict(
                 skip_crowd_during_training=True,
                 include_groundtruth_in_features=False,
                 use_category=True,
-                flatten_masks=True,
+                flatten_masks=False,
                 augment_input_data=True,
                 gt_mask_size=112,
                 num_classes=91,
@@ -38,7 +38,7 @@ test_data = dict(
             type="CocoInputReader",
             file_pattern="/workspace/data/coco/val*",
             batch_size=4,
-            mode=tf.estimator.ModeKeys.EVAL,
+            mode=tf.estimator.ModeKeys.PREDICT,
             params=dict(
                 visualize_images_summary=False,
                 image_size=(832, 1344),
@@ -64,12 +64,16 @@ test_data = dict(
             )
 
 train_config = _Namespace(**dict(
-            base_lr=1e-3,
+            base_lr=1e-2,
+            num_epochs=13,
+            fp16=True,
+            xla=True,
             weight_decay=1e-4,
             batch_size_per_im=512,
             images=118287,
             fg_fraction=0.25,
             mrcnn_resolution=28,
+            global_gradient_clip_ratio=5.0,
             box_loss_type="huber",
             sampler_cfg=dict(
                      type="RandomSampler",
@@ -79,7 +83,10 @@ train_config = _Namespace(**dict(
                     ),
             ))
 
-test_config = _Namespace(**dict())
+test_config = _Namespace(**dict(
+            annotations='/workspace/data/coco/annotations/instances_val2017.json',
+            async_eval=False,
+            ))
 
 config = _Namespace(**dict(
             train_data=train_data,

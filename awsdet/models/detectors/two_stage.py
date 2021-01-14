@@ -62,6 +62,9 @@ class TwoStageDetector(BaseDetector):
             model_outputs.update({"total_rpn_loss": total_rpn_loss,
                                   "rpn_score_loss": rpn_score_loss,
                                   "rpn_box_loss": rpn_box_loss})
+            loss_dict = self.parse_losses(model_outputs)
+            model_outputs['total_loss'] = loss_dict['total_loss']
+            model_outputs['l2_loss'] = loss_dict['l2_loss']
         else:
             model_outputs = self.roi_head(feature_maps, features['image_info'], proposals[0], training=training)
         return model_outputs
@@ -71,13 +74,13 @@ class TwoStageDetector(BaseDetector):
         loss_dict['bbox_loss'] = losses['total_loss_bbox']
         loss_dict['mask_loss'] = losses['mask_loss']
         loss_dict['rpn_loss'] = losses['total_rpn_loss']
-        loss_dict['l2_regularization_loss'] = self.train_cfg.weight_decay * tf.add_n([
+        loss_dict['l2_loss'] = self.train_cfg.weight_decay * tf.add_n([
                     tf.nn.l2_loss(v)
                     for v in self.trainable_variables
                     if not any([pattern in v.name for pattern in ["batch_normalization", "bias", "beta"]])
                 ])
         loss_dict['total_loss'] = losses['total_loss_bbox'] + losses['mask_loss'] \
-                                   + losses['total_rpn_loss'] + loss_dict['l2_regularization_loss']
+                                   + losses['total_rpn_loss'] + loss_dict['l2_loss']
         return loss_dict
     
     @tf.function

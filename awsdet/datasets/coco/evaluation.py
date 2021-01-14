@@ -45,12 +45,12 @@ from mpi4py import MPI
 
 from awsdet.utils.logging_formatter import logging
 
-from awsdet.datasets import coco_metric
-from awsdet.utils import coco_utils
+from awsdet.datasets.coco import coco_metric
+from awsdet.datasets.coco import coco_utils
 
-from awsdet.object_detection import visualization_utils
-from awsdet.utils.distributed_utils import MPI_rank
-from awsdet.utils import distributed_utils
+from awsdet.core import visualization_utils
+from awsdet.utils.dist_utils import MPI_rank
+from awsdet.utils import dist_utils
 
 import dllogger
 from dllogger import Verbosity
@@ -662,7 +662,7 @@ def evaluate_results(results, annotations_file, use_ext=True, async_eval=True, p
     MPI.COMM_WORLD.barrier()
     predictions_list = MPI.COMM_WORLD.gather(converted_predictions, root=0)
     source_ids_list = MPI.COMM_WORLD.gather(worker_source_ids, root=0)
-    if distributed_utils.MPI_rank() == 0:
+    if dist_utils.MPI_rank() == 0:
         all_predictions = []
         source_ids = []
         for i, p in enumerate(predictions_list):
