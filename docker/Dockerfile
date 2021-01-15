@@ -1,6 +1,6 @@
-FROM  763104351884.dkr.ecr.us-east-1.amazonaws.com/tensorflow-training:2.3.1-gpu-py37-cu110-ubuntu18.04
+FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/tensorflow-training:2.3.1-gpu-py37-cu110-ubuntu18.04
 
-RUN pip install jupyterlab
+RUN pip install jupyterlab==2.2.0
 
 ENV TZ=America/Los_Angeles
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -52,4 +52,5 @@ ENV SHELL="/bin/zsh"
 CMD SHELL="/bin/zsh" nohup jupyter lab --allow-root --ip=0.0.0.0 --no-browser > notebook.log
 
 # docker build -t johnbensnyder/tensorflow:mrcnn .
-# docker run --rm -it -d --gpus all --name aws_tensorflow --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --security-opt seccomp=unconfined -v ~/data/:/data/ -v ~/DeepLearningExamples/:/DeepLearningExamples/ johnbensnyder/tensorflow:mrcnn 
+# docker run --rm -it -d --gpus all --name awsdet_tensorflow --net=host --uts=host --ipc=host --ulimit stack=67108864 --ulimit memlock=-1 --security-opt seccomp=unconfined -v ~/data/:/workspace/data/ -v ~/DeepLearningExamples/:/workspace/DeepLearningExamples/ johnbensnyder/tensorflow:mrcnn
+# docker exec -it awsdet_tensorflow /bin/zsh -c "jupyter notebook list" 

@@ -8,6 +8,7 @@ from awsdet.training.schedulers import WarmupScheduler
 from awsdet.datasets.coco import evaluation
 from configs.mrcnn_config import config
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tqdm import tqdm
 from statistics import mean
 
@@ -44,10 +45,10 @@ learning_rate = config.train_config.base_lr/8 * global_batch_size
 schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay([steps_per_epoch * 8, steps_per_epoch * 11],
                                                                 [learning_rate, learning_rate/10, learning_rate/100])
 
-schedule = WarmupScheduler(schedule, learning_rate/10, steps_per_epoch//8)
+schedule = WarmupScheduler(schedule, learning_rate/8, steps_per_epoch//16)
 
-optimizer = tf.keras.optimizers.SGD(learning_rate=schedule,
-                                    momentum=0.9)
+optimizer = tf.keras.optimizers.SGD(learning_rate=schedule, momentum=0.9)
+# optimizer = tfa.optimizers.NovoGrad(learning_rate=schedule, weight_decay=1e-4)
 
 if config.train_config.fp16:
     optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(optimizer, 'dynamic')
@@ -73,7 +74,7 @@ for epoch in range(config.train_config.num_epochs):
         if hvd.rank()==0:
             pbar.set_description("Loss {0:.4f}, LR: {1:.4f}".format(loss_rolling_mean, 
                                                                     current_learning_rate))
-    p_bar = tqdm(range(5000//global_batch_size + 1),
+    p_bar = tqdm(range(5000//global_batch_size + 1), file=sys.stdout,
                  bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}') if hvd.rank()==0 else range(5000//global_batch_size + 1)
     predictions = [model_runner.predict(next(val_tdf)) for i in p_bar]
     args = [predictions, model_runner.test_cfg.annotations]
