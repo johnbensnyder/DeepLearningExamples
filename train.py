@@ -4,7 +4,8 @@ from awsdet import datasets
 from awsdet import core
 from awsdet import training
 from awsdet.utils.runner import Runner
-from awsdet.training.schedulers import WarmupScheduler
+from awsdet.training.optimizers.schedulers import WarmupScheduler
+from awsdet.training.optimizers import MomentumOptimizer
 from awsdet.datasets.coco import evaluation
 from configs.mrcnn_config import config
 import tensorflow as tf
@@ -17,10 +18,11 @@ from mpi4py import MPI
 hvd.init()
 
 devices = tf.config.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(devices[hvd.rank()], True)
 tf.config.set_visible_devices([devices[hvd.rank()]], 'GPU')
 logical_devices = tf.config.list_logical_devices('GPU')
-tf.config.optimizer.set_experimental_options({"auto_mixed_precision": True})
-tf.config.optimizer.set_jit(True)
+tf.config.optimizer.set_experimental_options({"auto_mixed_precision": config.train_config.fp16})
+tf.config.optimizer.set_jit(config.train_config.xla)
 
 detector = models.TwoStageDetector(backbone=config.backbone_cfg,
                                    neck=config.fpn_cfg,
@@ -46,8 +48,8 @@ schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay([steps_per_epoch
                                                                 [learning_rate, learning_rate/10, learning_rate/100])
 
 schedule = WarmupScheduler(schedule, learning_rate/8, steps_per_epoch//16)
-
-optimizer = tf.keras.optimizers.SGD(learning_rate=schedule, momentum=0.9)
+optimizer = MomentumOptimizer(learning_rate=schedule, momentum=0.9, nesterov=True)
+# optimizer = tf.keras.optimizers.SGD(learning_rate=schedule, momentum=0.9, nesterov=True)
 # optimizer = tfa.optimizers.NovoGrad(learning_rate=schedule, weight_decay=1e-4)
 
 if config.train_config.fp16:

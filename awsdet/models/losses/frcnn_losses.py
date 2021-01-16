@@ -113,7 +113,7 @@ class FastRCNNLoss(object):
                                                      anchors=rpn_box_rois, 
                                                      weights=self.bbox_reg_weights)
                 # Clip boxes FIXME: hardcoding for now
-                box_outputs = box_utils.clip_boxes(box_outputs, 832., 1344.)
+                box_outputs = box_utils.clip_boxes(box_outputs, (832., 1344.))
             
             box_outputs = tf.reshape(box_outputs, [batch_size, -1, 4])
             box_loss = self._fast_rcnn_box_loss(

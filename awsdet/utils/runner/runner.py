@@ -204,7 +204,7 @@ class Runner(object):
             scaled_gradients = tape.gradient(scaled_loss, self.model.trainable_variables)
             gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
         else:
-            gradients = tape.gradient(outputs['total_loss'], self.forward.trainable_variables)
+            gradients = tape.gradient(outputs['total_loss'], self.model.trainable_variables)
         if self.train_cfg.global_gradient_clip_ratio > 0.0:
             all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
             (clipped_grads, _) = tf.clip_by_global_norm(gradients, 
