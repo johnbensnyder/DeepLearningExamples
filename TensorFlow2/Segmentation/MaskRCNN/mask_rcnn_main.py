@@ -27,6 +27,8 @@ import subprocess
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # or any {'0', '1', '2'}
 os.environ["TF_CPP_VMODULE"] = 'non_max_suppression_op=0,generate_box_proposals_op=0,executor=0'
+os.environ['TF_CUDNN_DETERMINISTIC']='1'
+os.environ['PYTHONHASHSEED'] = str(1234)
 # os.environ["TF_XLA_FLAGS"] = 'tf_xla_print_cluster_outputs=1'
 
 from absl import app
@@ -55,6 +57,8 @@ from mask_rcnn.hyperparameters.cmdline_utils import define_hparams_flags
 
 from mask_rcnn.utils.logging_formatter import log_cleaning
 import dllogger
+import random
+import numpy as np
 
 FLAGS = define_hparams_flags()
 
@@ -114,6 +118,12 @@ def main(argv):
     # ============================ Configure parameters ============================ #
 
 
+    # Set random seeds
+    print(f"Use random seed {RUN_CONFIG.seed}")
+    random.seed(RUN_CONFIG.seed)
+    np.random.seed(RUN_CONFIG.seed)
+    tf.random.set_seed(RUN_CONFIG.seed)
+
     
     if RUN_CONFIG.use_tf_distributed and MPI_is_distributed():
         raise RuntimeError("Incompatible Runtime. Impossible to use `--use_tf_distributed` with MPIRun Horovod")
@@ -135,6 +145,22 @@ def main(argv):
     dllogger.init(backends=[dllogger.JSONStreamBackend(verbosity=dllogger.Verbosity.VERBOSE,
                                                            filename=RUN_CONFIG.log_path)])
 
+    if RUN_CONFIG.rubik:
+        import smdistributed.modelparallel.tensorflow as smp
+        cfg = {
+                "microbatches": 2,
+                "horovod": True,
+                "placement_strategy": "spread",
+                "partitions": 2,
+                "xla": True,
+                "pipeline": "interleaved",
+                "optimize": "speed",
+                "auto_partition": False,
+                "default_partition": 0,
+            }
+        smp.init(cfg)
+        print(f"[{smp.rank()}] rubik config {cfg}")
+    
     if RUN_CONFIG.mode in ('train', 'train_and_eval'):
         
         if RUN_CONFIG.static_data:
@@ -148,7 +174,8 @@ def main(argv):
                 use_fake_data=RUN_CONFIG.use_fake_data,
                 use_instance_mask=RUN_CONFIG.include_mask,
                 seed=RUN_CONFIG.seed,
-                disable_options=RUN_CONFIG.disable_data_options
+                disable_options=RUN_CONFIG.disable_data_options,
+                rubik=RUN_CONFIG.rubik
             )
 
     else:
@@ -163,7 +190,8 @@ def main(argv):
             use_fake_data=False,
             use_instance_mask=RUN_CONFIG.include_mask,
             seed=RUN_CONFIG.seed,
-            disable_options=RUN_CONFIG.disable_data_options
+            disable_options=RUN_CONFIG.disable_data_options,
+            rubik=RUN_CONFIG.rubik
         )
 
     else:

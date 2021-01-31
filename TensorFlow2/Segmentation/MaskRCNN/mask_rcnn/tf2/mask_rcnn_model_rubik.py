@@ -67,6 +67,8 @@ from mask_rcnn.utils.meters import StandardMeter
 from mask_rcnn.utils.metric_tracking import register_metric
 from mask_rcnn.utils.herring_env import is_herring
 
+import smdistributed.modelparallel.tensorflow as smp
+
 
 if is_herring():
     import herring.tensorflow as herring
@@ -201,7 +203,7 @@ def compute_model_statistics(batch_size, is_training=True):
         flops_per_image/1e9
     ))
     
-class MRCNN(tf.keras.Model):
+class MRCNN_RUBIK(smp.DistributedModel):
     
     def __init__(self, params, is_training=True, **kwargs):
         super().__init__(**kwargs)
@@ -231,192 +233,194 @@ class MRCNN(tf.keras.Model):
                                                 name="mask_head"
                                             )
     def call(self, features, labels, params, is_training=True):
-        model_outputs = {}
-        is_gpu_inference = not is_training and params['use_batched_nms']
-        batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
-        if 'source_ids' not in features:
-            features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
+        with smp.partition(0):
+            model_outputs = {}
+            is_gpu_inference = not is_training and params['use_batched_nms']
+            batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
+            if 'source_ids' not in features:
+                features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
 
-        all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
-                                      params['num_scales'], params['aspect_ratios'],
-                                      params['anchor_scale'],
-                                      (image_height, image_width))
-        backbone_feats = self.backbone(
-            features['images'],
-            training=is_training,
-        )
-        fpn_feats = self.fpn(backbone_feats, training=is_training)
-        rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
-                                                    features=fpn_feats,
-                                                    min_level=params['min_level'],
-                                                    max_level=params['max_level'],
-                                                    is_training=is_training)
-        if is_training:
-            rpn_pre_nms_topn = params['train_rpn_pre_nms_topn']
-            rpn_post_nms_topn = params['train_rpn_post_nms_topn']
-            rpn_nms_threshold = params['train_rpn_nms_threshold']
-
-        else:
-            rpn_pre_nms_topn = params['test_rpn_pre_nms_topn']
-            rpn_post_nms_topn = params['test_rpn_post_nms_topn']
-            rpn_nms_threshold = params['test_rpn_nms_thresh']
-
-        if params['use_custom_box_proposals_op']:
-            rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
-                scores_outputs=rpn_score_outputs,
-                box_outputs=rpn_box_outputs,
-                all_anchors=all_anchors,
-                image_info=features['image_info'],
-                rpn_pre_nms_topn=rpn_pre_nms_topn,
-                rpn_post_nms_topn=rpn_post_nms_topn,
-                rpn_nms_threshold=rpn_nms_threshold,
-                rpn_min_size=params['rpn_min_size']
+            all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
+                                          params['num_scales'], params['aspect_ratios'],
+                                          params['anchor_scale'],
+                                          (image_height, image_width))
+            backbone_feats = self.backbone(
+                features['images'],
+                training=is_training,
             )
-        else:
-            rpn_box_scores, rpn_box_rois = roi_ops.multilevel_propose_rois(
-                scores_outputs=rpn_score_outputs,
-                box_outputs=rpn_box_outputs,
-                all_anchors=all_anchors,
-                image_info=features['image_info'],
-                rpn_pre_nms_topn=rpn_pre_nms_topn,
-                rpn_post_nms_topn=rpn_post_nms_topn,
-                rpn_nms_threshold=rpn_nms_threshold,
-                rpn_min_size=params['rpn_min_size'],
-                bbox_reg_weights=None,
-                use_batched_nms=params['use_batched_nms']
-            )
-        rpn_box_rois = tf.cast(rpn_box_rois, dtype=tf.float32)
-
-        if is_training:
-            rpn_box_rois = tf.stop_gradient(rpn_box_rois)
-            rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
-
-            # Sampling
-            box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
-            training_ops.proposal_label_op(
-                rpn_box_rois,
-                labels['gt_boxes'],
-                labels['gt_classes'],
-                batch_size_per_im=params['batch_size_per_im'],
-                fg_fraction=params['fg_fraction'],
-                fg_thresh=params['fg_thresh'],
-                bg_thresh_hi=params['bg_thresh_hi'],
-                bg_thresh_lo=params['bg_thresh_lo']
-            )
-
-        # Performs multi-level RoIAlign.
-        box_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
-            features=fpn_feats,
-            boxes=rpn_box_rois,
-            output_size=7,
-            is_gpu_inference=is_gpu_inference
-        )
-        
-        class_outputs, box_outputs, _ = self.box_head(inputs=box_roi_features)
-
-        if not is_training:
-            if params['use_batched_nms']:
-                generate_detections_fn = postprocess_ops.generate_detections_gpu
-
-            else:
-                generate_detections_fn = postprocess_ops.generate_detections_tpu
+        with smp.partition(1):
+            fpn_feats = self.fpn(backbone_feats, training=is_training)
+            rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
+                                                        features=fpn_feats,
+                                                        min_level=params['min_level'],
+                                                        max_level=params['max_level'],
+                                                        is_training=is_training)
+            if is_training:
+                rpn_pre_nms_topn = params['train_rpn_pre_nms_topn']
+                rpn_post_nms_topn = params['train_rpn_post_nms_topn']
+                rpn_nms_threshold = params['train_rpn_nms_threshold']
             
-            detections = generate_detections_fn(
-                class_outputs=class_outputs,
-                box_outputs=box_outputs,
-                anchor_boxes=rpn_box_rois,
-                image_info=features['image_info'],
-                pre_nms_num_detections=params['test_rpn_post_nms_topn'],
-                post_nms_num_detections=params['test_detections_per_image'],
-                nms_threshold=params['test_nms'],
-                bbox_reg_weights=params['bbox_reg_weights']
+            else:
+                rpn_pre_nms_topn = params['test_rpn_pre_nms_topn']
+                rpn_post_nms_topn = params['test_rpn_post_nms_topn']
+                rpn_nms_threshold = params['test_rpn_nms_thresh']
+            
+            if params['use_custom_box_proposals_op']:
+                rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
+                    scores_outputs=rpn_score_outputs,
+                    box_outputs=rpn_box_outputs,
+                    all_anchors=all_anchors,
+                    image_info=features['image_info'],
+                    rpn_pre_nms_topn=rpn_pre_nms_topn,
+                    rpn_post_nms_topn=rpn_post_nms_topn,
+                    rpn_nms_threshold=rpn_nms_threshold,
+                    rpn_min_size=params['rpn_min_size']
+                )
+            else:
+                rpn_box_scores, rpn_box_rois = roi_ops.multilevel_propose_rois(
+                    scores_outputs=rpn_score_outputs,
+                    box_outputs=rpn_box_outputs,
+                    all_anchors=all_anchors,
+                    image_info=features['image_info'],
+                    rpn_pre_nms_topn=rpn_pre_nms_topn,
+                    rpn_post_nms_topn=rpn_post_nms_topn,
+                    rpn_nms_threshold=rpn_nms_threshold,
+                    rpn_min_size=params['rpn_min_size'],
+                    bbox_reg_weights=None,
+                    use_batched_nms=params['use_batched_nms']
+                )
+            rpn_box_rois = tf.cast(rpn_box_rois, dtype=tf.float32)
+            
+            if is_training:
+                rpn_box_rois = tf.stop_gradient(rpn_box_rois)
+                rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
+            
+                # Sampling
+                box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
+                training_ops.proposal_label_op(
+                    rpn_box_rois,
+                    labels['gt_boxes'],
+                    labels['gt_classes'],
+                    batch_size_per_im=params['batch_size_per_im'],
+                    fg_fraction=params['fg_fraction'],
+                    fg_thresh=params['fg_thresh'],
+                    bg_thresh_hi=params['bg_thresh_hi'],
+                    bg_thresh_lo=params['bg_thresh_lo']
+                )
+            
+            # Performs multi-level RoIAlign.
+            box_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
+                features=fpn_feats,
+                boxes=rpn_box_rois,
+                output_size=7,
+                is_gpu_inference=is_gpu_inference
             )
-
-            model_outputs.update({
-                'num_detections': detections[0],
-                'detection_boxes': detections[1],
-                'detection_classes': detections[2],
-                'detection_scores': detections[3],
-            })
-            # testing outputs
-            model_outputs.update({'class_outputs': tf.nn.softmax(class_outputs),
-                                  'box_outputs': box_outputs,
-                                  'anchor_boxes': rpn_box_rois})
-        else:  # is training
-            if params['box_loss_type'] != "giou":
-                encoded_box_targets = training_ops.encode_box_targets(
-                    boxes=rpn_box_rois,
-                    gt_boxes=box_targets,
-                    gt_labels=class_targets,
+            
+            class_outputs, box_outputs, _ = self.box_head(inputs=box_roi_features)
+            
+            if not is_training:
+                if params['use_batched_nms']:
+                    generate_detections_fn = postprocess_ops.generate_detections_gpu
+            
+                else:
+                    generate_detections_fn = postprocess_ops.generate_detections_tpu
+            
+                detections = generate_detections_fn(
+                    class_outputs=class_outputs,
+                    box_outputs=box_outputs,
+                    anchor_boxes=rpn_box_rois,
+                    image_info=features['image_info'],
+                    pre_nms_num_detections=params['test_rpn_post_nms_topn'],
+                    post_nms_num_detections=params['test_detections_per_image'],
+                    nms_threshold=params['test_nms'],
                     bbox_reg_weights=params['bbox_reg_weights']
                 )
+            
+                model_outputs.update({
+                    'num_detections': detections[0],
+                    'detection_boxes': detections[1],
+                    'detection_classes': detections[2],
+                    'detection_scores': detections[3],
+                })
+                # testing outputs
+                model_outputs.update({'class_outputs': tf.nn.softmax(class_outputs),
+                                      'box_outputs': box_outputs,
+                                      'anchor_boxes': rpn_box_rois})
+            else:  # is training
+                if params['box_loss_type'] != "giou":
+                    encoded_box_targets = training_ops.encode_box_targets(
+                        boxes=rpn_box_rois,
+                        gt_boxes=box_targets,
+                        gt_labels=class_targets,
+                        bbox_reg_weights=params['bbox_reg_weights']
+                    )
+            
+                model_outputs.update({
+                    'rpn_score_outputs': rpn_score_outputs,
+                    'rpn_box_outputs': rpn_box_outputs,
+                    'class_outputs': class_outputs,
+                    'box_outputs': box_outputs,
+                    'class_targets': class_targets,
+                    'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
+                    'box_rois': rpn_box_rois,
+                })
+            # Faster-RCNN mode.
+            if not params['include_mask']:
+                return model_outputs
+            
+            # Mask sampling
+            if not is_training:
+                selected_box_rois = model_outputs['detection_boxes']
+                class_indices = model_outputs['detection_classes']
+                class_indices = tf.cast(class_indices, dtype=tf.int32)
+            
+            else:
+                selected_class_targets, selected_box_targets, \
+                selected_box_rois, proposal_to_label_map = training_ops.select_fg_for_masks(
+                    class_targets=class_targets,
+                    box_targets=box_targets,
+                    boxes=rpn_box_rois,
+                    proposal_to_label_map=proposal_to_label_map,
+                    max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction'])
+                )
+            
+                class_indices = tf.cast(selected_class_targets, dtype=tf.int32)
+            
+            mask_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
+                features=fpn_feats,
+                boxes=selected_box_rois,
+                output_size=14,
+                is_gpu_inference=is_gpu_inference
+            )
+            
+            mask_outputs = self.mask_head(inputs=mask_roi_features, class_indices=class_indices)
+            
+            '''if MPI_local_rank() == 0:
+                # Print #FLOPs in model.
+                compute_model_statistics(batch_size, is_training=is_training)'''
+            
+            if is_training:
+                mask_targets = training_ops.get_mask_targets(
+            
+                    fg_boxes=selected_box_rois,
+                    fg_proposal_to_label_map=proposal_to_label_map,
+                    fg_box_targets=selected_box_targets,
+                    mask_gt_labels=labels['cropped_gt_masks'],
+                    output_size=params['mrcnn_resolution']
+                )
+            
+                model_outputs.update({
+                    'mask_outputs': mask_outputs,
+                    'mask_targets': mask_targets,
+                    'selected_class_targets': selected_class_targets,
+                })
+            
+            else:
+                model_outputs.update({
+                    'detection_masks': tf.nn.sigmoid(mask_outputs),
+                })
 
-            model_outputs.update({
-                'rpn_score_outputs': rpn_score_outputs,
-                'rpn_box_outputs': rpn_box_outputs,
-                'class_outputs': class_outputs,
-                'box_outputs': box_outputs,
-                'class_targets': class_targets,
-                'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
-                'box_rois': rpn_box_rois,
-            })
-        # Faster-RCNN mode.
-        if not params['include_mask']:
             return model_outputs
-
-        # Mask sampling
-        if not is_training:
-            selected_box_rois = model_outputs['detection_boxes']
-            class_indices = model_outputs['detection_classes']
-            class_indices = tf.cast(class_indices, dtype=tf.int32)
-
-        else:
-            selected_class_targets, selected_box_targets, \
-            selected_box_rois, proposal_to_label_map = training_ops.select_fg_for_masks(
-                class_targets=class_targets,
-                box_targets=box_targets,
-                boxes=rpn_box_rois,
-                proposal_to_label_map=proposal_to_label_map,
-                max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction'])
-            )
-
-            class_indices = tf.cast(selected_class_targets, dtype=tf.int32)
-
-        mask_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
-            features=fpn_feats,
-            boxes=selected_box_rois,
-            output_size=14,
-            is_gpu_inference=is_gpu_inference
-        )
-        
-        mask_outputs = self.mask_head(inputs=mask_roi_features, class_indices=class_indices)
-
-        '''if MPI_local_rank() == 0:
-            # Print #FLOPs in model.
-            compute_model_statistics(batch_size, is_training=is_training)'''
-
-        if is_training:
-            mask_targets = training_ops.get_mask_targets(
-
-                fg_boxes=selected_box_rois,
-                fg_proposal_to_label_map=proposal_to_label_map,
-                fg_box_targets=selected_box_targets,
-                mask_gt_labels=labels['cropped_gt_masks'],
-                output_size=params['mrcnn_resolution']
-            )
-
-            model_outputs.update({
-                'mask_outputs': mask_outputs,
-                'mask_targets': mask_targets,
-                'selected_class_targets': selected_class_targets,
-            })
-
-        else:
-            model_outputs.update({
-                'detection_masks': tf.nn.sigmoid(mask_outputs),
-            })
-
-        return model_outputs
     
     def rpn_head_fn(self, features, min_level=2, max_level=6, is_training=True):
         scores_outputs = dict()
@@ -829,13 +833,13 @@ class SessionModel(object):
             config.inter_op_parallelism_threads = 4
         return config
     
-class TapeModel(object):
+class RubikModel(object):
     
     def __init__(self, params, train_input_fn=None, eval_input_fn=None, is_training=True):
         self.params = params
 
 
-        self.forward = MRCNN(self.params.values(), is_training=is_training)
+        self.forward = MRCNN_RUBIK(self.params.values(), is_training=is_training)
         self.model_dir = self.params.model_dir
         train_params = dict(self.params.values(), batch_size=self.params.train_batch_size)
         self.train_tdf = iter(train_input_fn(train_params)) \
@@ -848,14 +852,14 @@ class TapeModel(object):
 
     def load_weights(self):
         weight_names = []
-        for weight in self.forward.layers[0].weights:
+        for weight in self.forward.layers[2].weights:
             name = weight.name
             for load_weight_name in eager_mapping.resnet_vars:
                 if load_weight_name in name:
                     weight_names.append(load_weight_name)
         chkp = tf.compat.v1.train.NewCheckpointReader(self.params.checkpoint)
         weights = [chkp.get_tensor(i) for i in weight_names]
-        self.forward.layers[0].set_weights(weights)
+        self.forward.layers[2].set_weights(weights)
         
     def get_optimizer(self):
         if self.params.lr_schedule=='piecewise':
@@ -887,8 +891,13 @@ class TapeModel(object):
             opt = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt, 'dynamic')
         return opt, schedule
 
-    @tf.function
-    def test_step(self, features, labels):
+    def print_tensor(self, tensor, name):
+        print_op = tf.print(name, tf.reduce_sum(tensor))
+        with tf.control_dependencies([print_op]):
+            return tf.identity(tensor)
+
+    @smp.step
+    def rubik_test(self, features, labels):
         loss_dict = dict()
         model_outputs = self.forward(features, labels, self.params.values(), True)
         loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
@@ -932,49 +941,56 @@ class TapeModel(object):
         return loss_dict
 
     @tf.function
-    def train_step(self, features, labels, sync_weights=False, sync_opt=False):
+    def test_step(self, features, labels):
+        loss_dict = self.rubik_test(features, labels)
+        for key, val in loss_dict.items():
+            loss_dict[key] = val.reduce_mean()
+        return loss_dict
+
+    @smp.step
+    def get_grads(self, features, labels, sync_weights=False, sync_opt=False):
         loss_dict = dict()
-        with tf.GradientTape() as tape:
-            model_outputs = self.forward(features, labels, self.params.values(), True)
-            loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
-                loss_dict['rpn_box_loss'] = losses.rpn_loss(
-                    score_outputs=model_outputs['rpn_score_outputs'],
-                    box_outputs=model_outputs['rpn_box_outputs'],
-                    labels=labels,
-                    params=self.params.values()
-                )
-            loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
-                loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
-                    class_outputs=model_outputs['class_outputs'],
-                    box_outputs=model_outputs['box_outputs'],
-                    class_targets=model_outputs['class_targets'],
-                    box_targets=model_outputs['box_targets'],
-                    rpn_box_rois=model_outputs['box_rois'],
-                    image_info=features['image_info'],
-                    params=self.params.values()
-                )
-            if self.params.include_mask:
-                loss_dict['mask_loss'] = losses.mask_rcnn_loss(
-                    mask_outputs=model_outputs['mask_outputs'],
-                    mask_targets=model_outputs['mask_targets'],
-                    select_class_targets=model_outputs['selected_class_targets'],
-                    params=self.params.values()
-                )
-            else:
-                loss_dict['mask_loss'] = 0.
-            if self.params.optimizer_type in ['LAMB', 'Novograd']: # decoupled weight decay
-                loss_dict['l2_regularization_loss'] = tf.constant(0.0)
-            else:
-                loss_dict['l2_regularization_loss'] = self.params.l2_weight_decay * tf.add_n([
-                    tf.nn.l2_loss(v)
-                    for v in self.forward.trainable_variables
-                    if not any([pattern in v.name for pattern in ["batch_normalization", "bias", "beta"]])
-                ])
-            loss_dict['total_loss'] = loss_dict['total_rpn_loss'] \
-                + loss_dict['total_fast_rcnn_loss'] + loss_dict['mask_loss'] \
-                + loss_dict['l2_regularization_loss']
-            if self.params.amp:
-                scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
+        model_outputs = self.forward(features, labels, self.params.values(), True)
+        loss_dict['total_rpn_loss'], loss_dict['rpn_score_loss'], \
+            loss_dict['rpn_box_loss'] = losses.rpn_loss(
+                score_outputs=model_outputs['rpn_score_outputs'],
+                box_outputs=model_outputs['rpn_box_outputs'],
+                labels=labels,
+                params=self.params.values()
+            )
+        loss_dict['total_fast_rcnn_loss'], loss_dict['fast_rcnn_class_loss'], \
+            loss_dict['fast_rcnn_box_loss'] = losses.fast_rcnn_loss(
+                class_outputs=model_outputs['class_outputs'],
+                box_outputs=model_outputs['box_outputs'],
+                class_targets=model_outputs['class_targets'],
+                box_targets=model_outputs['box_targets'],
+                rpn_box_rois=model_outputs['box_rois'],
+                image_info=features['image_info'],
+                params=self.params.values()
+            )
+        if self.params.include_mask:
+            loss_dict['mask_loss'] = losses.mask_rcnn_loss(
+                mask_outputs=model_outputs['mask_outputs'],
+                mask_targets=model_outputs['mask_targets'],
+                select_class_targets=model_outputs['selected_class_targets'],
+                params=self.params.values()
+            )
+        else:
+            loss_dict['mask_loss'] = 0.
+        if self.params.optimizer_type in ['LAMB', 'Novograd']: # decoupled weight decay
+            loss_dict['l2_regularization_loss'] = tf.constant(0.0)
+        else:
+            loss_dict['l2_regularization_loss'] = self.params.l2_weight_decay * tf.add_n([
+                tf.nn.l2_loss(v)
+                for v in self.forward.trainable_variables
+                if not any([pattern in v.name for pattern in ["batch_normalization", "bias", "beta"]])
+            ])
+        loss_dict['total_loss'] = loss_dict['total_rpn_loss'] \
+            + loss_dict['total_fast_rcnn_loss'] + loss_dict['mask_loss'] \
+            + loss_dict['l2_regularization_loss']
+
+        if self.params.amp:
+            scaled_loss = self.optimizer.get_scaled_loss(loss_dict['total_loss'])
 
         if is_herring():
             if MPI_is_distributed(True):
@@ -999,6 +1015,37 @@ class TapeModel(object):
                     grad = 2.0 * grad
                 grads_and_vars.append((grad, var))
 
+            return grads_and_vars, loss_dict
+        else:
+            if self.params.amp:
+                scaled_gradients = self.optimizer.get_gradients(scaled_loss, self.forward.trainable_variables)
+                gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+            else:
+                gradients = self.optimizer.get_gradients(loss_dict['total_loss'], self.forward.trainable_variables)
+            global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
+            if global_gradient_clip_ratio > 0.0:
+                all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
+                (clipped_grads, _) = tf.clip_by_global_norm(gradients, clip_norm=global_gradient_clip_ratio,
+                                use_norm=tf.cond(all_are_finite, lambda: tf.linalg.global_norm(gradients), lambda: tf.constant(1.0)))
+                gradients = clipped_grads
+        
+            grads = []
+            # Special treatment for biases (beta is named as bias in reference model)
+            # Reference: https://github.com/ddkang/Detectron/blob/80f3295308/lib/modeling/optimizer.py#L109
+            for grad, var in zip(gradients, self.forward.trainable_variables):
+                if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
+                    grad = 2.0 * grad
+                grads.append(grad)
+
+            return grads, loss_dict
+        
+    @tf.function
+    def train_step(self, features, labels, sync_weights=False, sync_opt=False):
+        gradients, loss_dict = self.get_grads(features, labels, sync_weights=sync_weights, sync_opt=sync_opt)
+        for key, val in loss_dict.items():
+            loss_dict[key] = val.reduce_mean()
+
+        if is_herring():
             # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
             self.optimizer.apply_gradients(grads_and_vars)
             if MPI_is_distributed(True) and sync_weights:
@@ -1010,30 +1057,10 @@ class TapeModel(object):
                     logging.info("Broadcasting optimizer")
                 herring.broadcast_variables(self.optimizer.variables(), 0)        
         else:
-            if MPI_is_distributed():
-                tape = hvd.DistributedGradientTape(tape, compression=hvd.compression.NoneCompressor)
-            if self.params.amp:
-                scaled_gradients = tape.gradient(scaled_loss, self.forward.trainable_variables)
-                gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
-            else:
-                gradients = tape.gradient(loss_dict['total_loss'], self.forward.trainable_variables)
-            global_gradient_clip_ratio = self.params.global_gradient_clip_ratio
-            if global_gradient_clip_ratio > 0.0:
-                all_are_finite = tf.reduce_all([tf.reduce_all(tf.math.is_finite(g)) for g in gradients])
-                (clipped_grads, _) = tf.clip_by_global_norm(gradients, clip_norm=global_gradient_clip_ratio,
-                                use_norm=tf.cond(all_are_finite, lambda: tf.linalg.global_norm(gradients), lambda: tf.constant(1.0)))
-                gradients = clipped_grads
-        
-            grads_and_vars = []
-            # Special treatment for biases (beta is named as bias in reference model)
-            # Reference: https://github.com/ddkang/Detectron/blob/80f3295308/lib/modeling/optimizer.py#L109
-            for grad, var in zip(gradients, self.forward.trainable_variables):
-                if grad is not None and any([pattern in var.name for pattern in ["bias", "beta"]]):
-                    grad = 2.0 * grad
-                grads_and_vars.append((grad, var))
-
+            if MPI_is_distributed(False):
+                gradients = [hvd.allreduce(g.reduce_mean()) for g in gradients]
             # self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
-            self.optimizer.apply_gradients(grads_and_vars)
+            self.optimizer.apply_gradients(zip(gradients, self.forward.trainable_variables))
 
             if MPI_is_distributed() and sync_weights:
                 if MPI_rank()==0:
@@ -1050,6 +1077,26 @@ class TapeModel(object):
         model_outputs = self.forward(features, labels, self.params.values(), True)
         self.load_weights()
     
+    def broadcast_input(self, training=True):
+        ###### Broadcast the input to guarantee all mp ranks have the same input
+        group = smp.MP_GROUP
+        rank_type = smp.RankType.MP_RANK
+        if smp.mp_rank() == 0:
+            if training:
+                features, labels = next(self.train_tdf)
+                for key, val in labels.items():
+                    labels[key] = val.numpy()
+            else:
+                features, labels = next(self.eval_tdf)['features'], None
+
+            for key, val in features.items():
+                features[key] = val.numpy()
+
+            features, labels = smp.broadcast((features, labels), group)
+        else:
+            features, labels = smp.recv_from(0, rank_type)
+        return features, labels
+
     def train_epoch(self, steps, broadcast=False):
         if MPI_rank(is_herring())==0:
             logging.info("Starting training loop")
@@ -1069,12 +1116,22 @@ class TapeModel(object):
             
             tstart = time.perf_counter()
             features, labels = next(self.train_tdf)
+            # broadcast the input since there is randomness in the data pipeline
+            # But this will cause huge performance regression
+            #features, labels = self.broadcast_input()
             loss_dict = self.train_step(features, labels, b_w, b_o)
+            if i == 0:
+                if smp.mp_rank() == 0:
+                    self.load_weights()
+                smp.barrier()
 
             delta_t = time.perf_counter() - tstart
             timings.append(delta_t)
+            group = smp.MP_GROUP
+            l2_loss = sum(smp.allgather(loss_dict['l2_regularization_loss'].numpy(), group))
+            loss_dict['total_loss'] = loss_dict['total_loss'].numpy() + (l2_loss - loss_dict['l2_regularization_loss'].numpy())
             if MPI_rank(is_herring())==0:
-                loss_history.append(loss_dict['total_loss'].numpy())
+                loss_history.append(loss_dict['total_loss'])
                 step = self.optimizer.iterations
                 learning_rate = self.schedule(step)
                 p_bar.set_description("Loss: {0:.4f}, LR: {1:.4f}".format(mean(loss_history[-50:]), 
@@ -1110,7 +1167,8 @@ class TapeModel(object):
         self.forward.set_weights(weights)
     
 
-    @tf.function            
+    #@tf.function 
+    @smp.step           
     def predict(self, features):
         labels = None
         model_outputs = self.forward(features, labels, self.params.values(), False)
@@ -1129,7 +1187,11 @@ class TapeModel(object):
         worker_predictions = dict()
         for i in p_bar:
             features = next(self.eval_tdf)['features']
+            #features, _ = self.broadcast_input(training=False)
             out = self.predict(features)
+            for key, val in out.items():
+                #out[key] = val.reduce_mean()
+                out[key] = val.merge()
             out = evaluation.process_prediction_for_eval(out)
             for k, v in out.items():
                 if k not in worker_predictions:
@@ -1140,16 +1202,19 @@ class TapeModel(object):
         _preds = copy.deepcopy(worker_predictions)
         for k, v in _preds.items():
             _preds[k] = np.concatenate(v, axis=0)
-        if MPI_rank(is_herring()) < 32:
+        if smp.dp_rank() < 32:
             converted_predictions = coco.load_predictions(_preds, include_mask=True, is_image_mask=False)
             worker_source_ids = _preds['source_id']
         else:
             converted_predictions = []
             worker_source_ids = []
-        from mpi4py import MPI
-        MPI.COMM_WORLD.barrier()
-        predictions_list = evaluation.gather_result_from_all_processes(converted_predictions)
-        source_ids_list = evaluation.gather_result_from_all_processes(worker_source_ids)
+        #smp.barrier()
+        if smp.mp_rank() == 0:
+            predictions_list = evaluation.gather_result_from_all_processes_rubik(converted_predictions)
+            source_ids_list = evaluation.gather_result_from_all_processes_rubik(worker_source_ids)
+        #predictions_list = [converted_predictions]
+        #source_ids_list = [worker_source_ids]
+
         validation_json_file=self.params.val_json_file
         if MPI_rank(is_herring()) == 0:
             all_predictions = []
@@ -1176,3 +1241,4 @@ class TapeModel(object):
                     eval_thread.start()
                 else:
                     evaluation.compute_coco_eval_metric_n(*args)
+        smp.barrier()

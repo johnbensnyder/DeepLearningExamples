@@ -32,7 +32,7 @@ _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-4
 
 
-class BNReLULayer(KerasMockLayer):
+class BNReLULayer(tf.keras.layers.Layer):
     def __init__(self, trainable, relu=True, init_zero=False, data_format='channels_last'):
         """Performs a batch normalization followed by a ReLU.
 
@@ -50,6 +50,7 @@ class BNReLULayer(KerasMockLayer):
         A normalized `Tensor` with the same `data_format`.
         """
         super(BNReLULayer, self).__init__(trainable=trainable)
+        #super(BNReLULayer, self).__init__()
 
         if init_zero:
             gamma_initializer = tf.keras.initializers.Zeros()
@@ -71,13 +72,14 @@ class BNReLULayer(KerasMockLayer):
             trainable=self._trainable,
             gamma_initializer=gamma_initializer,
             fused=True,
-            name="batch_normalization"
+            name=None#"batch_normalization"
         )
 
         if relu:
             self._local_layers["relu"] = tf.keras.layers.ReLU()
 
-    def __call__(self, inputs, training=False, *args, **kwargs):
+    #def __call__(self, inputs, training=False, *args, **kwargs):
+    def call(self, inputs, training=False, *args, **kwargs):
 
         net = self._local_layers["batchnorm"](inputs, training=training and self._trainable)
 
@@ -87,7 +89,7 @@ class BNReLULayer(KerasMockLayer):
             return net
 
 
-class GNReLULayer(KerasMockLayer):
+class GNReLULayer(tf.keras.layers.Layer):
     def __init__(self, trainable, relu=True, init_zero=False, data_format='channels_last'):
         """Performs a batch normalization followed by a ReLU.
         
@@ -122,13 +124,14 @@ class GNReLULayer(KerasMockLayer):
             epsilon=1e-5,
             trainable=True,
             gamma_initializer=gamma_initializer,
-            name="group_normalization"
+            name=None#"group_normalization"
         )
 
         if relu:
             self._local_layers["relu"] = tf.keras.layers.ReLU()
 
-    def __call__(self, inputs, training=False, *args, **kwargs):
+    #def __call__(self, inputs, training=False, *args, **kwargs):
+    def call(self, inputs, training=False, *args, **kwargs):
 
         net = self._local_layers["groupnorm"](inputs, training=training)
 
@@ -138,7 +141,7 @@ class GNReLULayer(KerasMockLayer):
             return net
         
 
-class FixedPaddingLayer(KerasMockLayer):
+class FixedPaddingLayer(tf.keras.layers.Layer):
     def __init__(self, kernel_size, data_format='channels_last', trainable=True):
         """Pads the input along the spatial dimensions independently of input size.
 
@@ -149,6 +152,7 @@ class FixedPaddingLayer(KerasMockLayer):
             width]` or "channels_last for `[batch, height, width, channels]`.
         """
         super(FixedPaddingLayer, self).__init__(trainable=trainable)
+        #super(FixedPaddingLayer, self).__init__()
 
         pad_total = kernel_size - 1
         pad_beg = pad_total // 2
@@ -159,7 +163,8 @@ class FixedPaddingLayer(KerasMockLayer):
         else:
             self._paddings = [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]]
 
-    def __call__(self, inputs, *args, **kwargs):
+    #def __call__(self, inputs, *args, **kwargs):
+    def call(self, inputs, *args, **kwargs):
         """
       Args:
         inputs: `Tensor` of size `[batch, channels, height, width]` or
@@ -173,7 +178,7 @@ class FixedPaddingLayer(KerasMockLayer):
         return tf.pad(tensor=inputs, paddings=self._paddings)
 
 
-class Conv2dFixedPadding(KerasMockLayer):
+class Conv2dFixedPadding(tf.keras.layers.Layer):
     def __init__(self, filters, kernel_size, strides, data_format='channels_last', trainable=False):
         """Strided 2-D convolution with explicit padding.
 
@@ -192,6 +197,8 @@ class Conv2dFixedPadding(KerasMockLayer):
             A `Tensor` of shape `[batch, filters, height_out, width_out]`.
         """
         super(Conv2dFixedPadding, self).__init__(trainable=trainable)
+        #super(Conv2dFixedPadding, self).__init__()
+        self._local_layers = dict()
 
         if strides > 1:
             self._local_layers["fixed_padding"] = FixedPaddingLayer(kernel_size=kernel_size, data_format=data_format)
@@ -205,10 +212,11 @@ class Conv2dFixedPadding(KerasMockLayer):
             kernel_initializer=tf.keras.initializers.VarianceScaling(),
             data_format=data_format,
             trainable=self._trainable,
-            name="conv2d"
+            name=None#"conv2d"
         )
 
-    def __call__(self, inputs, *args, **kwargs):
+    #def __call__(self, inputs, *args, **kwargs):
+    def call(self, inputs, *args, **kwargs):
 
         try:
             net = self._local_layers["fixed_padding"](inputs)
@@ -218,7 +226,7 @@ class Conv2dFixedPadding(KerasMockLayer):
         return self._local_layers["conv2d"](net)
 
 
-class ResidualBlock(KerasMockLayer):
+class ResidualBlock(tf.keras.layers.Layer):
     def __init__(self, filters, trainable, finetune_bn, strides, use_projection=False, data_format='channels_last', norm_type='batchnorm'):
         """Standard building block for residual networks with BN after convolutions.
 
@@ -235,9 +243,11 @@ class ResidualBlock(KerasMockLayer):
             or "channels_last for `[batch, height, width, channels]`.
         """
         super(ResidualBlock, self).__init__(trainable=trainable)
+        #super(ResidualBlock, self).__init__()
 
         self._finetune_bn = finetune_bn
         self.norm_type = norm_type
+        self._local_layers = dict()
         if use_projection:
             self._local_layers["projection"] = dict()
 
@@ -312,7 +322,8 @@ class ResidualBlock(KerasMockLayer):
 
         self._local_layers["activation"] = tf.keras.layers.ReLU()
 
-    def __call__(self, inputs, training=False):
+    #def __call__(self, inputs, training=False):
+    def call(self, inputs, training=False):
         """
         Args:
         inputs: `Tensor` of size `[batch, channels, height, width]`.
@@ -357,7 +368,7 @@ class ResidualBlock(KerasMockLayer):
         return self._local_layers["activation"](net + shortcut)
 
 
-class BottleneckBlock(KerasMockLayer):
+class BottleneckBlock(tf.keras.layers.Layer):
     def __init__(self, filters, trainable, finetune_bn, strides, use_projection=False, data_format='channels_last', norm_type="batchnorm"):
         """Bottleneck block variant for residual networks with BN after convolutions.
 
@@ -374,9 +385,11 @@ class BottleneckBlock(KerasMockLayer):
             or "channels_last for `[batch, height, width, channels]`.
         """
         super(BottleneckBlock, self).__init__(trainable=trainable)
+        #super(BottleneckBlock, self).__init__()
 
         self._finetune_bn = finetune_bn
         self.norm_type = norm_type
+        self._local_layers = dict()
         
         if use_projection:
             # Projection shortcut only in first block within a group. Bottleneck blocks
@@ -479,7 +492,8 @@ class BottleneckBlock(KerasMockLayer):
 
         self._local_layers["activation"] = tf.keras.layers.ReLU()
 
-    def __call__(self, inputs, training=False):
+    #def __call__(self, inputs, training=False):
+    def call(self, inputs, training=False):
         """
         Args:
         inputs: `Tensor` of size `[batch, channels, height, width]`.
@@ -523,7 +537,7 @@ class BottleneckBlock(KerasMockLayer):
         return self._local_layers["activation"](net + shortcut)
 
 
-class BlockGroup(KerasMockLayer):
+class BlockGroup(tf.keras.layers.Layer):
     def __init__(self, filters, block_layer, n_blocks, strides, trainable, finetune_bn, data_format='channels_last', norm_type='batchnorm'):
         """Creates one group of blocks for the ResNet model.
 
@@ -543,10 +557,12 @@ class BlockGroup(KerasMockLayer):
         The output `Tensor` of the block layer.
         """
         super(BlockGroup, self).__init__(trainable=trainable)
+        #super(BlockGroup, self).__init__()
 
         self._finetune_bn = finetune_bn
 
         self._n_blocks = n_blocks
+        self._local_layers = dict()
 
         for block_id in range(self._n_blocks):
             # Only the first block per block_group uses projection shortcut and strides.
@@ -560,7 +576,8 @@ class BlockGroup(KerasMockLayer):
                 norm_type=norm_type
             )
 
-    def __call__(self, inputs, training=False):
+    #def __call__(self, inputs, training=False):
+    def call(self, inputs, training=False):
 
         net = inputs
 
@@ -570,7 +587,7 @@ class BlockGroup(KerasMockLayer):
         return net
 
 
-class Resnet_Model(KerasMockLayer, tf.keras.models.Model):
+class Resnet_Model(tf.keras.models.Model):
     def __init__(self, resnet_model, data_format='channels_last', trainable=True, finetune_bn=False, norm_type='batchnorm', *args, **kwargs):
         """
         Our actual ResNet network.  We return the output of c2, c3,c4,c5
@@ -604,6 +621,7 @@ class Resnet_Model(KerasMockLayer, tf.keras.models.Model):
         self._data_format = data_format
         self._block_layer = model_params[resnet_model]['block']
         self._n_layers = model_params[resnet_model]['layers']
+        self._local_layers = dict()
         if norm_type == 'batchnorm':
             self._local_layers["conv2d"] = Conv2dFixedPadding(
                 filters=64,

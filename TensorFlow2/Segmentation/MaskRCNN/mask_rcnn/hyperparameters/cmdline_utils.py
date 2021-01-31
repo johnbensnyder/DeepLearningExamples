@@ -22,6 +22,24 @@ from absl import flags
 
 def define_hparams_flags():
 
+    flags.DEFINE_bool(
+        'rubik',
+        default=False,
+        help='Run with rubik.'
+    )
+
+    flags.DEFINE_bool(
+        'one_step_test',
+        default=False,
+        help='Just run one fwd step for test.'
+    )
+
+    flags.DEFINE_bool(
+        'one_step_eval',
+        default=False,
+        help='Just run one fwd step for eval.'
+    )
+
     flags.DEFINE_string(
         'log_path',
         default="./mrcnn.json",
