@@ -155,8 +155,6 @@ def main(argv):
                 "xla": True,
                 "pipeline": "interleaved",
                 "optimize": "speed",
-                "auto_partition": False,
-                "default_partition": 0,
             }
         smp.init(cfg)
         print(f"[{smp.rank()}] rubik config {cfg}")

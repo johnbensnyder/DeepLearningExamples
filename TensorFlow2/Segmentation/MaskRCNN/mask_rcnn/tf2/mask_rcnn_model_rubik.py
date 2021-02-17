@@ -233,194 +233,192 @@ class MRCNN_RUBIK(smp.DistributedModel):
                                                 name="mask_head"
                                             )
     def call(self, features, labels, params, is_training=True):
-        with smp.partition(0):
-            model_outputs = {}
-            is_gpu_inference = not is_training and params['use_batched_nms']
-            batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
-            if 'source_ids' not in features:
-                features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
+        model_outputs = {}
+        is_gpu_inference = not is_training and params['use_batched_nms']
+        batch_size, image_height, image_width, _ = features['images'].get_shape().as_list()
+        if 'source_ids' not in features:
+            features['source_ids'] = -1 * tf.ones([batch_size], dtype=tf.float32)
 
-            all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
-                                          params['num_scales'], params['aspect_ratios'],
-                                          params['anchor_scale'],
-                                          (image_height, image_width))
-            backbone_feats = self.backbone(
-                features['images'],
-                training=is_training,
+        all_anchors = anchors.Anchors(params['min_level'], params['max_level'],
+                                      params['num_scales'], params['aspect_ratios'],
+                                      params['anchor_scale'],
+                                      (image_height, image_width))
+        backbone_feats = self.backbone(
+            features['images'],
+            training=is_training,
+        )
+        fpn_feats = self.fpn(backbone_feats, training=is_training)
+        rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
+                                                    features=fpn_feats,
+                                                    min_level=params['min_level'],
+                                                    max_level=params['max_level'],
+                                                    is_training=is_training)
+        if is_training:
+            rpn_pre_nms_topn = params['train_rpn_pre_nms_topn']
+            rpn_post_nms_topn = params['train_rpn_post_nms_topn']
+            rpn_nms_threshold = params['train_rpn_nms_threshold']
+        
+        else:
+            rpn_pre_nms_topn = params['test_rpn_pre_nms_topn']
+            rpn_post_nms_topn = params['test_rpn_post_nms_topn']
+            rpn_nms_threshold = params['test_rpn_nms_thresh']
+
+        if params['use_custom_box_proposals_op']:
+            rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
+                scores_outputs=rpn_score_outputs,
+                box_outputs=rpn_box_outputs,
+                all_anchors=all_anchors,
+                image_info=features['image_info'],
+                rpn_pre_nms_topn=rpn_pre_nms_topn,
+                rpn_post_nms_topn=rpn_post_nms_topn,
+                rpn_nms_threshold=rpn_nms_threshold,
+                rpn_min_size=params['rpn_min_size']
             )
-        with smp.partition(1):
-            fpn_feats = self.fpn(backbone_feats, training=is_training)
-            rpn_score_outputs, rpn_box_outputs = self.rpn_head_fn(
-                                                        features=fpn_feats,
-                                                        min_level=params['min_level'],
-                                                        max_level=params['max_level'],
-                                                        is_training=is_training)
-            if is_training:
-                rpn_pre_nms_topn = params['train_rpn_pre_nms_topn']
-                rpn_post_nms_topn = params['train_rpn_post_nms_topn']
-                rpn_nms_threshold = params['train_rpn_nms_threshold']
-            
-            else:
-                rpn_pre_nms_topn = params['test_rpn_pre_nms_topn']
-                rpn_post_nms_topn = params['test_rpn_post_nms_topn']
-                rpn_nms_threshold = params['test_rpn_nms_thresh']
-            
-            if params['use_custom_box_proposals_op']:
-                rpn_box_scores, rpn_box_rois = roi_ops.custom_multilevel_propose_rois(
-                    scores_outputs=rpn_score_outputs,
-                    box_outputs=rpn_box_outputs,
-                    all_anchors=all_anchors,
-                    image_info=features['image_info'],
-                    rpn_pre_nms_topn=rpn_pre_nms_topn,
-                    rpn_post_nms_topn=rpn_post_nms_topn,
-                    rpn_nms_threshold=rpn_nms_threshold,
-                    rpn_min_size=params['rpn_min_size']
-                )
-            else:
-                rpn_box_scores, rpn_box_rois = roi_ops.multilevel_propose_rois(
-                    scores_outputs=rpn_score_outputs,
-                    box_outputs=rpn_box_outputs,
-                    all_anchors=all_anchors,
-                    image_info=features['image_info'],
-                    rpn_pre_nms_topn=rpn_pre_nms_topn,
-                    rpn_post_nms_topn=rpn_post_nms_topn,
-                    rpn_nms_threshold=rpn_nms_threshold,
-                    rpn_min_size=params['rpn_min_size'],
-                    bbox_reg_weights=None,
-                    use_batched_nms=params['use_batched_nms']
-                )
-            rpn_box_rois = tf.cast(rpn_box_rois, dtype=tf.float32)
-            
-            if is_training:
-                rpn_box_rois = tf.stop_gradient(rpn_box_rois)
-                rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
-            
-                # Sampling
-                box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
-                training_ops.proposal_label_op(
-                    rpn_box_rois,
-                    labels['gt_boxes'],
-                    labels['gt_classes'],
-                    batch_size_per_im=params['batch_size_per_im'],
-                    fg_fraction=params['fg_fraction'],
-                    fg_thresh=params['fg_thresh'],
-                    bg_thresh_hi=params['bg_thresh_hi'],
-                    bg_thresh_lo=params['bg_thresh_lo']
-                )
-            
-            # Performs multi-level RoIAlign.
-            box_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
-                features=fpn_feats,
-                boxes=rpn_box_rois,
-                output_size=7,
-                is_gpu_inference=is_gpu_inference
+        else:
+            rpn_box_scores, rpn_box_rois = roi_ops.multilevel_propose_rois(
+                scores_outputs=rpn_score_outputs,
+                box_outputs=rpn_box_outputs,
+                all_anchors=all_anchors,
+                image_info=features['image_info'],
+                rpn_pre_nms_topn=rpn_pre_nms_topn,
+                rpn_post_nms_topn=rpn_post_nms_topn,
+                rpn_nms_threshold=rpn_nms_threshold,
+                rpn_min_size=params['rpn_min_size'],
+                bbox_reg_weights=None,
+                use_batched_nms=params['use_batched_nms']
             )
-            
-            class_outputs, box_outputs, _ = self.box_head(inputs=box_roi_features)
-            
-            if not is_training:
-                if params['use_batched_nms']:
-                    generate_detections_fn = postprocess_ops.generate_detections_gpu
-            
-                else:
-                    generate_detections_fn = postprocess_ops.generate_detections_tpu
-            
-                detections = generate_detections_fn(
-                    class_outputs=class_outputs,
-                    box_outputs=box_outputs,
-                    anchor_boxes=rpn_box_rois,
-                    image_info=features['image_info'],
-                    pre_nms_num_detections=params['test_rpn_post_nms_topn'],
-                    post_nms_num_detections=params['test_detections_per_image'],
-                    nms_threshold=params['test_nms'],
+        rpn_box_rois = tf.cast(rpn_box_rois, dtype=tf.float32)
+
+        if is_training:
+            rpn_box_rois = tf.stop_gradient(rpn_box_rois)
+            rpn_box_scores = tf.stop_gradient(rpn_box_scores)  # TODO Jonathan: Unused => Shall keep ?
+
+            # Sampling
+            box_targets, class_targets, rpn_box_rois, proposal_to_label_map = \
+            training_ops.proposal_label_op(
+                rpn_box_rois,
+                labels['gt_boxes'],
+                labels['gt_classes'],
+                batch_size_per_im=params['batch_size_per_im'],
+                fg_fraction=params['fg_fraction'],
+                fg_thresh=params['fg_thresh'],
+                bg_thresh_hi=params['bg_thresh_hi'],
+                bg_thresh_lo=params['bg_thresh_lo']
+            )
+
+        # Performs multi-level RoIAlign.
+        box_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
+            features=fpn_feats,
+            boxes=rpn_box_rois,
+            output_size=7,
+            is_gpu_inference=is_gpu_inference
+        )
+
+        class_outputs, box_outputs, _ = self.box_head(inputs=box_roi_features)
+
+        if not is_training:
+            if params['use_batched_nms']:
+                generate_detections_fn = postprocess_ops.generate_detections_gpu
+        
+            else:
+                generate_detections_fn = postprocess_ops.generate_detections_tpu
+
+            detections = generate_detections_fn(
+                class_outputs=class_outputs,
+                box_outputs=box_outputs,
+                anchor_boxes=rpn_box_rois,
+                image_info=features['image_info'],
+                pre_nms_num_detections=params['test_rpn_post_nms_topn'],
+                post_nms_num_detections=params['test_detections_per_image'],
+                nms_threshold=params['test_nms'],
+                bbox_reg_weights=params['bbox_reg_weights']
+            )
+
+            model_outputs.update({
+                'num_detections': detections[0],
+                'detection_boxes': detections[1],
+                'detection_classes': detections[2],
+                'detection_scores': detections[3],
+            })
+            # testing outputs
+            model_outputs.update({'class_outputs': tf.nn.softmax(class_outputs),
+                                  'box_outputs': box_outputs,
+                                  'anchor_boxes': rpn_box_rois})
+        else:  # is training
+            if params['box_loss_type'] != "giou":
+                encoded_box_targets = training_ops.encode_box_targets(
+                    boxes=rpn_box_rois,
+                    gt_boxes=box_targets,
+                    gt_labels=class_targets,
                     bbox_reg_weights=params['bbox_reg_weights']
                 )
-            
-                model_outputs.update({
-                    'num_detections': detections[0],
-                    'detection_boxes': detections[1],
-                    'detection_classes': detections[2],
-                    'detection_scores': detections[3],
-                })
-                # testing outputs
-                model_outputs.update({'class_outputs': tf.nn.softmax(class_outputs),
-                                      'box_outputs': box_outputs,
-                                      'anchor_boxes': rpn_box_rois})
-            else:  # is training
-                if params['box_loss_type'] != "giou":
-                    encoded_box_targets = training_ops.encode_box_targets(
-                        boxes=rpn_box_rois,
-                        gt_boxes=box_targets,
-                        gt_labels=class_targets,
-                        bbox_reg_weights=params['bbox_reg_weights']
-                    )
-            
-                model_outputs.update({
-                    'rpn_score_outputs': rpn_score_outputs,
-                    'rpn_box_outputs': rpn_box_outputs,
-                    'class_outputs': class_outputs,
-                    'box_outputs': box_outputs,
-                    'class_targets': class_targets,
-                    'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
-                    'box_rois': rpn_box_rois,
-                })
-            # Faster-RCNN mode.
-            if not params['include_mask']:
-                return model_outputs
-            
-            # Mask sampling
-            if not is_training:
-                selected_box_rois = model_outputs['detection_boxes']
-                class_indices = model_outputs['detection_classes']
-                class_indices = tf.cast(class_indices, dtype=tf.int32)
-            
-            else:
-                selected_class_targets, selected_box_targets, \
-                selected_box_rois, proposal_to_label_map = training_ops.select_fg_for_masks(
-                    class_targets=class_targets,
-                    box_targets=box_targets,
-                    boxes=rpn_box_rois,
-                    proposal_to_label_map=proposal_to_label_map,
-                    max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction'])
-                )
-            
-                class_indices = tf.cast(selected_class_targets, dtype=tf.int32)
-            
-            mask_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
-                features=fpn_feats,
-                boxes=selected_box_rois,
-                output_size=14,
-                is_gpu_inference=is_gpu_inference
-            )
-            
-            mask_outputs = self.mask_head(inputs=mask_roi_features, class_indices=class_indices)
-            
-            '''if MPI_local_rank() == 0:
-                # Print #FLOPs in model.
-                compute_model_statistics(batch_size, is_training=is_training)'''
-            
-            if is_training:
-                mask_targets = training_ops.get_mask_targets(
-            
-                    fg_boxes=selected_box_rois,
-                    fg_proposal_to_label_map=proposal_to_label_map,
-                    fg_box_targets=selected_box_targets,
-                    mask_gt_labels=labels['cropped_gt_masks'],
-                    output_size=params['mrcnn_resolution']
-                )
-            
-                model_outputs.update({
-                    'mask_outputs': mask_outputs,
-                    'mask_targets': mask_targets,
-                    'selected_class_targets': selected_class_targets,
-                })
-            
-            else:
-                model_outputs.update({
-                    'detection_masks': tf.nn.sigmoid(mask_outputs),
-                })
 
+            model_outputs.update({
+                'rpn_score_outputs': rpn_score_outputs,
+                'rpn_box_outputs': rpn_box_outputs,
+                'class_outputs': class_outputs,
+                'box_outputs': box_outputs,
+                'class_targets': class_targets,
+                'box_targets': encoded_box_targets if params['box_loss_type'] != 'giou' else box_targets,
+                'box_rois': rpn_box_rois,
+            })
+        # Faster-RCNN mode.
+        if not params['include_mask']:
             return model_outputs
+
+        # Mask sampling
+        if not is_training:
+            selected_box_rois = model_outputs['detection_boxes']
+            class_indices = model_outputs['detection_classes']
+            class_indices = tf.cast(class_indices, dtype=tf.int32)
+
+        else:
+            selected_class_targets, selected_box_targets, \
+            selected_box_rois, proposal_to_label_map = training_ops.select_fg_for_masks(
+                class_targets=class_targets,
+                box_targets=box_targets,
+                boxes=rpn_box_rois,
+                proposal_to_label_map=proposal_to_label_map,
+                max_num_fg=int(params['batch_size_per_im'] * params['fg_fraction'])
+            )
+
+            class_indices = tf.cast(selected_class_targets, dtype=tf.int32)
+
+        mask_roi_features = spatial_transform_ops.multilevel_crop_and_resize(
+            features=fpn_feats,
+            boxes=selected_box_rois,
+            output_size=14,
+            is_gpu_inference=is_gpu_inference
+        )
+
+        mask_outputs = self.mask_head(inputs=mask_roi_features, class_indices=class_indices)
+        
+        '''if MPI_local_rank() == 0:
+            # Print #FLOPs in model.
+            compute_model_statistics(batch_size, is_training=is_training)'''
+
+        if is_training:
+            mask_targets = training_ops.get_mask_targets(
+        
+                fg_boxes=selected_box_rois,
+                fg_proposal_to_label_map=proposal_to_label_map,
+                fg_box_targets=selected_box_targets,
+                mask_gt_labels=labels['cropped_gt_masks'],
+                output_size=params['mrcnn_resolution']
+            )
+        
+            model_outputs.update({
+                'mask_outputs': mask_outputs,
+                'mask_targets': mask_targets,
+                'selected_class_targets': selected_class_targets,
+            })
+
+        else:
+            model_outputs.update({
+                'detection_masks': tf.nn.sigmoid(mask_outputs),
+            })
+
+        return model_outputs
     
     def rpn_head_fn(self, features, min_level=2, max_level=6, is_training=True):
         scores_outputs = dict()
